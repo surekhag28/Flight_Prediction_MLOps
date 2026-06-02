@@ -22,7 +22,6 @@ All services are managed using Docker Compose:
 ```bash
 docker compose up
 
-## Services Access Table
 
 | Service | URL | Credentials |
 |----------|-----|--------------|
@@ -30,11 +29,8 @@ docker compose up
 | MinIO Console | http://localhost:9003 | minioadmin / minioadmin |
 
 
-# Project Structure
+## Project Structure
 
-## 📁 Project Structure
-
-```text
 flight_prediction_mlops/
 ├── airflow/dags/            # 5 Airflow DAGs (ingest, retrain, monitor, ab, feast)
 ├── src/
