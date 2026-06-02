@@ -23,9 +23,7 @@ It covers the full lifecyle right from streaming, feature ngineering on a lakeho
 
 ## Services
 
-All services are managed using Docker Compose:
-
-`docker compose up`
+All services are managed using Docker Compose: `docker compose up`
 
 
 | Service | URL | Credentials |
@@ -38,6 +36,7 @@ All services are managed using Docker Compose:
 
 ## Project Structure
 
+```
 flight_prediction_mlops/
 ├── airflow/dags/            # 5 Airflow DAGs (ingest, retrain, monitor, ab, feast)
 ├── src/
@@ -56,3 +55,4 @@ flight_prediction_mlops/
 ├── docs/                    # Architecture, API ref, data pipeline, ML, ops, dev guides
 ├── Dockerfile
 └── docker-compose.yml       # 12-service stack
+```
