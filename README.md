@@ -2,25 +2,30 @@
 
 An end-to-end MLOps system that turns live flight telemetry from the OpenSky Network into three production grade predictions:
 
-Flight predictions
-Flight Anomalies
+- Flight predictions
+- Flight Anomalies
 
 It covers the full lifecyle right from streaming, feature ngineering on a lakehouse, training with hyperparameters search, experiment tracking, real-time inference with caching and A/B testing, monitoring, drift detection, and automated retraining.
 
+---
+
 ## Architecture
+
+
+---
 
 ## What It Does
 
 1. Ingest live flight states from OpenSky REST API every 15 minutes and from a Kafka stream in real time.
 2. Cleans and transforms the data through Bronze → Silver → Gold layers on MinIO (a medallion lakehouse).
 
+---
 
 ## Services
 
 All services are managed using Docker Compose:
 
-```bash
-docker compose up
+`docker compose up`
 
 
 | Service | URL | Credentials |
@@ -28,6 +33,8 @@ docker compose up
 | Airflow | http://localhost:8081 | airflow / airflow |
 | MinIO Console | http://localhost:9003 | minioadmin / minioadmin |
 
+
+---
 
 ## Project Structure
 
