@@ -90,35 +90,50 @@ def _run_suite(df: pd.DataFrame, suite_name: str, add_expectations_fn):
             "success_percent": round(stats.get("success_percent", 0.0), 2),
         },
     )
-
-    print(result)
+    _log_result(validation_result)
     return validation_result
 
 
+def _log_result(result: ValidationbResult) -> None:
+    log = logger.info if result.passed else logger.warning
+    log(
+        f"Data validation checks: {'PASSED' if result.passed else 'FAILED'}",
+        extra={
+            "suite": result.suite_name,
+            "evaluated": result.evaluated_expectations,
+            "passed_count": result.successful_expecatations,
+            "failed_count": result.failed_expectations,
+            "success_rate": result.success_rate,
+        },
+    )
+
+    for f in result.failed_expectations:
+        log(f"Failed expectations: {f['expectation_type'], f.get('column','N/A')}")
+
+
 def validate_bronze(df: pd.DataFrame):
-    print(df.head(2))
+    # print(df.head(2))
     return _run_suite(df, "bronze_suite", add_bronze_expectations)
 
 
-if __name__ == "__main__":
-    import boto3
-    import json
+# if __name__ == "__main__":
+#     import boto3
+#     import json
 
-    s3 = boto3.client(
-        "s3",
-        endpoint_url="http://localhost:9002",
-        aws_access_key_id="minioadmin",
-        aws_secret_access_key="minioadmin",
-    )
+#     s3 = boto3.client(
+#         "s3",
+#         endpoint_url="http://localhost:9002",
+#         aws_access_key_id="minioadmin",
+#         aws_secret_access_key="minioadmin",
+#     )
 
-    obj = s3.get_object(
-        Bucket="aviation-lake",
-        Key="bronze/opensky/year=2026/month=06/day=02/batch_20260602_045828.json",
-    )
-    import pandas as pd
+#     obj = s3.get_object(
+#         Bucket="aviation-lake",
+#         Key="bronze/opensky/year=2026/month=06/day=02/batch_20260602_045828.json",
+#     )
+#     import pandas as pd
 
-    content = json.loads(obj["Body"].read().decode("utf-8"))
-    print(content)
-    # df = pd.DataFrame(json.loads(obj["Body"].read()["states"].decode("utf-8")))
-    # print(df.head())
-    # validate_bronze(df)
+#     content = json.loads(obj["Body"].read().decode("utf-8"))["states"]
+#     df = pd.DataFrame(content)
+#     print(df.head())
+#     validate_bronze(df)

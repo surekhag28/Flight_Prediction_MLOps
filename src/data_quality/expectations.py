@@ -31,7 +31,7 @@ def add_bronze_expectations():
         "velocity",
         "true_track",
         "vertical_rate",
-        "timestamp",
+        "time_position",
     ]
 
     expectations = [
@@ -43,8 +43,8 @@ def add_bronze_expectations():
 
     bounds = {
         "velocity": (0, 600),
-        "baro_latitude": (-500, 15000),
-        "latittude": (-90, 90),
+        "baro_altitude": (-500, 15000),
+        "latitude": (-90, 90),
         "longitude": (-180, 180),
         "true_track": (0, 360),
     }

@@ -1,5 +1,51 @@
 version: "3.9"
 
+x-airflow-common: &airflow-common
+  build:
+    context: .
+    dockerfile: Dockerfile.airflow
+  environment: &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+    AIRFLOW__CORE__FERNET_KEY: 'ZmDfcTF7_60GrrY167zsiPd67pEvs0aGOv2oasOM1Pg='
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
+    AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+    AIRFLOW__API__AUTH_BACKENDS: 'airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session'
+    AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'
+    AIRFLOW__WEBSERVER__EXPOSE_CONFIG: 'true'
+    # AWS / MinIO
+    AWS_ACCESS_KEY_ID: minioadmin
+    AWS_SECRET_ACCESS_KEY: minioadmin
+    MLFLOW_S3_ENDPOINT_URL: http://minio:9000
+    # MinIO
+    MINIO_ENDPOINT: http://minio:9000
+    MINIO_ACCESS_KEY: minioadmin
+    MINIO_SECRET_KEY: minioadmin
+    MINIO_BUCKET: aviation-lake
+    # MLflow
+    MLFLOW_TRACKING_URI: http://mlflow:5000
+    MLFLOW_ENABLE_LOGGED_MODEL_INTEGRATION: "false"
+    GIT_PYTHON_REFRESH: quiet
+    # Feast
+    FEAST_REPO_PATH: /opt/feature_repo
+    # Spark
+    SPARK_HOME: /opt/spark
+    JAVA_HOME: /usr/lib/jvm/java-17-openjdk-arm64
+    PYTHONPATH: /opt/airflow:/opt/spark/python:/opt/src:/opt
+    # OpenSky API OAuth2
+    OPENSKY_CLIENT_ID: ${OPENSKY_CLIENT_ID:-}
+    OPENSKY_CLIENT_SECRET: ${OPENSKY_CLIENT_SECRET:-}
+  volumes:
+    - ./airflow/dags:/opt/airflow/dags
+    - ./airflow/logs:/opt/airflow/logs
+    - ./airflow/plugins:/opt/airflow/plugins
+    - ./src:/opt/src
+    - ./feature_repo:/opt/feature_repo
+  user: "${AIRFLOW_UID:-50000}:0"
+  depends_on: &airflow-depends-on
+    postgres:
+      condition: service_healthy
+
 services:
 
   minio:
@@ -35,25 +81,91 @@ services:
       "
     restart: on-failure
 
-  airflow:
-    image: apache/airflow:2.8.1
-
-    container_name: airflow
-
-    depends_on:
-      - minio
-
-    ports:
-      - "8080:8080"
-
+   # ── Database ──────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16
     environment:
-      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
-
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
     volumes:
-      - ./airflow/dags:/opt/airflow/dags
-      - ./src:/opt/airflow/src
+      - postgres-data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 10s
+      retries: 5
+      start_period: 5s
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1G
+    restart: always
 
-    command: standalone
+
+  # ── Airflow ───────────────────────────────────────────────────────────────
+  airflow-init:
+    <<: *airflow-common
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        mkdir -p /opt/airflow/logs /opt/airflow/dags /opt/airflow/plugins
+        chown -R "${AIRFLOW_UID:-50000}:0" /opt/airflow/{logs,dags,plugins}
+        gosu airflow airflow db migrate
+        gosu airflow airflow users create \
+          --username airflow \
+          --password airflow \
+          --firstname Aviation \
+          --lastname MLOps \
+          --role Admin \
+          --email admin@example.com || true
+        echo "Airflow initialized"
+    user: "0:0"
+    restart: on-failure
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+
+  airflow-webserver:
+    <<: *airflow-common
+    command: webserver
+    ports:
+      - "8081:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: always
+    depends_on:
+      <<: *airflow-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    healthcheck:
+      test: ["CMD", "airflow", "jobs", "check", "--job-type", "SchedulerJob", "--allow-multiple", "--limit", "100"]
+      interval: 60s
+      timeout: 30s
+      retries: 5
+      start_period: 60s
+    restart: always
+    depends_on:
+      <<: *airflow-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+      # redis:
+      #   condition: service_healthy
+      # mlflow:
+      #   condition: service_healthy
 
   ingestion:
     build: 
@@ -77,10 +189,9 @@ services:
 
     restart: on-failure
 
-    
-
-
 
 
 volumes:
   minio-data:
+  postgres-data:
+  

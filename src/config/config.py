@@ -18,8 +18,29 @@ class BaseConfigSettings(BaseSettings):
     )
 
 
+class MinioSettings(BaseConfigSettings):
+    model_config = SettingsConfigDict(
+        env_file=[".env", str(ENV_FILE_PATH)],
+        env_prefix="MINIO__",
+        extra="ignore",
+        frozen=True,
+        case_sensitive=False,
+    )
+
+    endpoint: str = "http://minio:9000"
+    access_key: str = "minioadmin"
+    secret_key: str = "minioadmin"
+    bucket: str = "aviation-lake"
+
+
 class Settings(BaseConfigSettings):
-    app_version: str = "0.1.0"
+    api_version: str = "0.1.0"
     debug: bool = True
     environment: Literal["development", "staging", "production"] = "development"
-    service_name: str = "aviation-api"
+    service_name: str = "flight-prediction-ml"
+
+    miniosettings: MinioSettings = Field(default_factory=MinioSettings)
+
+
+def get_settings() -> Settings:
+    return Settings()

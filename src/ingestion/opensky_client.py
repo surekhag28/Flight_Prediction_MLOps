@@ -98,6 +98,8 @@ def _get_bearer_token() -> str | None:
     _token_cache["access_token"] = data["access_token"]
     _token_cache["expires_at"] = now + data.get("expires_in", 300)
 
+    return _token_cache["access_token"]
+
 
 def fetch_states(timeout: int = 30) -> dict:
     """Fetch all aircraft states from OpenSky API."""
@@ -123,6 +125,7 @@ def fetch_states(timeout: int = 30) -> dict:
     except requests.exceptions.HTTPError as e:
         if e.response.status_code == 429:
             logger.warning("Rate limit exceeded by OpenSky API, sleeping 60secs")
+            logger.info(e.response)
             time.sleep(60)
         raise
 
@@ -185,6 +188,7 @@ def ingest(run_ts: datetime | None = None) -> dict:
         "status": "success",
     }
 
+    logger.info("fOpensky ingestion layer : {key}")
     return summary
 
 
@@ -201,7 +205,15 @@ def validate_states(states: list[dict]) -> list[dict]:
     return valid
 
 
-if __name__ == "__main__":
-    result = fetch_states()
-    summary = ingest()
-    print(json.dumps(result, indent=2))
+# if __name__ == "__main__":
+#     result = fetch_states()
+#     summary, payload = ingest()
+#     # print(json.dumps(result, indent=2))
+
+#     import pandas as pd
+
+#     df = pd.DataFrame(payload)
+
+#     from src.data_quality.validate import validate_bronze
+
+#     validate_bronze(df)

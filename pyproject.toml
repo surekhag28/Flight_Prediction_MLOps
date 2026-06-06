@@ -13,6 +13,7 @@ core = [
     "boto3>=1.34",
     "s3fs>=2024.2",
     "pydantic>=2.5",
+    "pydantic-settings>=2.0",
     "pyyaml>=6.0",
     "requests>=2.31",
     "great-expectations>=0.18",
