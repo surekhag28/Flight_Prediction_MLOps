@@ -154,6 +154,19 @@ def build_bronze_key(ts: datetime) -> str:
     return f"bronze/opensky/year={ts.year}/month={ts.month:02d}/day={ts.day:02d}/batch_{ts.strftime('%Y%m%d_%H%M%S')}.json"
 
 
+def validate_states(states: list[dict]) -> list[dict]:
+    valid = [
+        state
+        for state in states
+        if state.get("latitude") is not None and state.get("longitude") is not None
+    ]
+    if len(valid) != len(states):
+        dropped = len(states) - len(valid)
+        logger.info(f"Dropped {dropped} states because of missing lat/long")
+
+    return valid
+
+
 def ingest(run_ts: datetime | None = None) -> dict:
     """
     Fetch > Validate > Store to MinIO bronze layer
@@ -188,21 +201,8 @@ def ingest(run_ts: datetime | None = None) -> dict:
         "status": "success",
     }
 
-    logger.info("fOpensky ingestion layer : {key}")
+    logger.info(f"Opensky ingestion layer : {key}")
     return summary
-
-
-def validate_states(states: list[dict]) -> list[dict]:
-    valid = [
-        state
-        for state in states
-        if state.get("latitude") is not None and state.get("longitude") is not None
-    ]
-    if len(valid) != len(states):
-        dropped = len(states) - len(valid)
-        logger.info(f"Dropped {dropped} states because of missing lat/long")
-
-    return valid
 
 
 # if __name__ == "__main__":

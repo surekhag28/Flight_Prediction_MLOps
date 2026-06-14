@@ -9,6 +9,7 @@ import sys
 from datetime import datetime, timedelta
 from airflow.operators.python import PythonOperator
 from airflow import DAG
+from src.data_quality.validate import publish_data_docs
 from src.core.logger import get_logger
 
 DEFAULT_ARGS = {
@@ -23,13 +24,13 @@ def _ingest(**context):
     from dag_utils import set_pipeline_run_id
     from src.ingestion.opensky_client import ingest
 
-    # run_id = set_pipeline_run_id(**context)
+    run_id = set_pipeline_run_id(**context)
     log = get_logger(__name__)
     result = ingest()
-    # context["task_instance"].xcom_push(key="bronze_key", value=result["bronze_key"])
-    # context["task_instance"].xcom_push(
-    #     key="aircraft_count", value=result["aircraft_count"]
-    # )
+    context["task_instance"].xcom_push(key="bronze_key", value=result["bronze_key"])
+    context["task_instance"].xcom_push(
+        key="aircraft_count", value=result["aircraft_count"]
+    )
     log.info(
         f"Ingestion complete, aircraft_count= {result['aircraft_count']}, bronze_key = {result['bronze_key']}"
     )
@@ -97,10 +98,10 @@ def _validate_bronze(**context):
         ) from e
 
     result = validate_bronze(df)
-    # publish_data_docs([result], run_id)
+    publish_data_docs([result], run_id)
 
     log.info(
-        "Bronze validation complete: passed: {result.passed}, evaluated: {result.evaluated_expectations}, "
+        f"Bronze validation complete: passed: {result.passed}, evaluated: {result.evaluated_expectations}, "
         "failed: {result.failed_expectations}, success_rate: {result.success_rate}"
     )
 
@@ -114,26 +115,27 @@ def _validate_bronze(**context):
     return result.to_dict()
 
 
-def test():
-    print("in airflow")
-    _ingest()
+# def test():
+#     print("in airflow")
+#     _ingest()
 
 
-test()
-# with DAG(
-#     dag_id="opensky_ingest_dag",
-#     description="Fetching data from OpenSky API and ingesting to > bronze > silver > gold layer",
-#     schedule_interval="0 * * * *",
-#     start_date=datetime(2026, 6, 6),
-#     catchup=False,
-#     max_active_runs=1,
-#     default_args=DEFAULT_ARGS,
-#     tags=["ingestion", "opensky", "etl"],
-# ) as dag:
-#     fetch = PythonOperator(task_id="fetch_opensky_api", python_callable=_ingest)
-#     validate = PythonOperator(task_id="validate_schema", python_callable=_validate)
-#     validate_bronze = PythonOperator(
-#         task_id="validate_bronze", python_callable=_validate_bronze
-#     )
+# test()
 
-#     fetch >> validate >> validate_bronze
+with DAG(
+    dag_id="opensky_ingest_dag",
+    description="Fetching data from OpenSky API and ingesting to > bronze > silver > gold layer",
+    schedule_interval="0 * * * *",
+    start_date=datetime(2026, 6, 6),
+    catchup=False,
+    max_active_runs=1,
+    default_args=DEFAULT_ARGS,
+    tags=["ingestion", "opensky", "etl"],
+) as dag:
+    fetch = PythonOperator(task_id="fetch_opensky_api", python_callable=_ingest)
+    validate = PythonOperator(task_id="validate_schema", python_callable=_validate)
+    validate_bronze = PythonOperator(
+        task_id="validate_bronze", python_callable=_validate_bronze
+    )
+
+    fetch >> validate >> validate_bronze
