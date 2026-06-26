@@ -115,6 +115,33 @@ def _validate_bronze(**context):
     return result.to_dict()
 
 
+def _run_spark_job(job_name: str, module_path: str, extra_configs=None, **context):
+
+    import importlib
+    from dag_utils import get_pipeline_run_id
+    from src.utils.spark_utils import get_spark_session
+
+    logger = get_logger(__name__)
+    run_id = get_pipeline_run_id(**context)
+    spark = get_spark_session(job_name, extra_configs=extra_configs)
+
+    try:
+        module = importlib.import_module(module_path)
+        result = module.run(spark, run_id)
+    finally:
+        try:
+            spark.stop()
+        except Exception as e:
+            logger.warning(f"spark.stop() failed (JVM may have crashed): {e}")
+    return result
+
+
+def _bronze_to_silver(**context):
+    return _run_spark_job(
+        "bronze_to_silver", "src.processing.bronze_to_silver", **context
+    )
+
+
 # def test():
 #     print("in airflow")
 #     _ingest()
@@ -137,5 +164,8 @@ with DAG(
     validate_bronze = PythonOperator(
         task_id="validate_bronze", python_callable=_validate_bronze
     )
+    bronze2silver = PythonOperator(
+        task_id="spark_bronze_to_silver", python_callable=_bronze_to_silver
+    )
 
-    fetch >> validate >> validate_bronze
+    fetch >> validate >> validate_bronze >> bronze2silver

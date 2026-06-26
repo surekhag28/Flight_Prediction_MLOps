@@ -106,7 +106,7 @@ services:
     restart: always
 
 
-  # ── Airflow ───────────────────────────────────────────────────────────────
+ # ── Airflow ───────────────────────────────────────────────────────────────
   airflow-init:
     <<: *airflow-common
     entrypoint: /bin/bash
@@ -188,8 +188,6 @@ services:
       - ./src:/app/src
 
     restart: on-failure
-
-
 
 volumes:
   minio-data:

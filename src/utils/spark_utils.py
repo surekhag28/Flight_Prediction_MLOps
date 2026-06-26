@@ -17,10 +17,13 @@ from pyspark.sql import SparkSession
 
 logger = get_logger(__name__)
 
-BUCKET = os.getenv("MINIO__BUCKET")
-MINIO_ENDPOINT = os.getenv("MINIO__ENDPOINT")
+BUCKET = os.getenv("MINIO_BUCKET", "aviation-lake")
+MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT")
 MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
 MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY", "minioadmin")
+
+logger.info(f"Bucket :  {BUCKET}")
+logger.info(f"Minio Endpoint :  {MINIO_ENDPOINT}")
 
 BRONZE_BASE = f"s3a://{BUCKET}/bronze/opensky"
 SILVER_BASE = f"s3a://{BUCKET}/silver/flight_states"
@@ -31,9 +34,8 @@ def get_spark_session(
 ) -> SparkSession:
 
     builder = (
-        SparkSession.appName(app_name)
+        SparkSession.builder.appName(app_name)
         .master(os.getenv("SPARK_MASTER_URL", "local[*]"))
-        .config("spark.hadoop.fs.s3a.endpoint", MINIO_ENDPOINT)
         .config("spark.hadoop.fs.s3a.endpoint", MINIO_ENDPOINT)
         .config("spark.hadoop.fs.s3a.access.key", MINIO_ACCESS_KEY)
         .config("spark.hadoop.fs.s3a.secret.key", MINIO_SECRET_KEY)
@@ -75,6 +77,47 @@ def get_spark_session(
             builder = builder.config(key, value)
 
     spark = builder.getOrCreate()
-    spark.sparkContext.SetLogLevel("WARN")
+    spark.sparkContext.setLogLevel("WARN")
     logger.info(f"Spark session {app_name} created master={spark.sparkContext.master}")
     return spark
+
+
+class StageMetadata:
+    def __init__(self, stage_name: str, pipeline_run_id: str):
+        self.stage_name = stage_name
+        self.pipeline_run_id = pipeline_run_id
+        self.start_time = time.time()
+        self.metrics: dict[str, Any] = {}
+        self.artifacts: dict[str, Any] = {}
+        self.status = "running"
+        self.error: str | None = None
+
+    def add_metric(self, key: str, value: Any) -> None:
+        self.metrics[key] = value
+
+    def add_artifact(self, key: str, path: Any) -> None:
+        self.artifacts[key] = path
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "stage_name": self.stage_name,
+            "pipeline_run_id": self.pipeline_run_id,
+            "status": self.status,
+            "start_time": self.start_time,
+            "duration_secs": round(time.time()) - round(self.start_time),
+            "metrics": self.metrics,
+            "artifacts": self.artifacts,
+            "error": self.error,
+        }
+
+    def save(self, output_dir="/tmp/metadata"):
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        file_path = output_dir / f"{self.stage_name}_{self.pipeline_run_id}.json"
+
+        with file_path.open("w") as f:
+            json.dump(self.to_dict(), f, indent=2)
+
+        logger.info(f"Stage metadata saved to {file_path}")
+        return str(file_path)

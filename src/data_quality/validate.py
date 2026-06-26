@@ -23,7 +23,7 @@ logger = get_logger(__name__)
 
 
 @dataclass
-class ValidationbResult:
+class ValidationResult:
     suite_name: str
     passed: bool
     evaluated_expectations: int
@@ -89,7 +89,7 @@ def _run_suite(df: pd.DataFrame, suite_name: str, add_expectations_fn):
                 }
             )
 
-    validation_result = ValidationbResult(
+    validation_result = ValidationResult(
         suite_name=suite_name,
         passed=passed,
         evaluated_expectations=evaluated,
@@ -105,7 +105,7 @@ def _run_suite(df: pd.DataFrame, suite_name: str, add_expectations_fn):
     return validation_result
 
 
-def _log_result(result: ValidationbResult) -> None:
+def _log_result(result: ValidationResult) -> None:
     log = logger.info if result.passed else logger.warning
     log(
         f"Data validation checks: {'PASSED' if result.passed else 'FAILED'}",
@@ -130,7 +130,7 @@ def validate_bronze(df: pd.DataFrame):
 # ----- Validation Result publisher
 
 
-def publish_data_docs(results: list[ValidationbResult], run_id: str) -> str | None:
+def publish_data_docs(results: list[ValidationResult], run_id: str) -> str | None:
     """
     Serialize validation results as HTML report and upload to MinIO.
 
@@ -174,7 +174,7 @@ def publish_data_docs(results: list[ValidationbResult], run_id: str) -> str | No
         return None
 
 
-def _build_html_report(results: list[ValidationbResult], run_id: str) -> str:
+def _build_html_report(results: list[ValidationResult], run_id: str) -> str:
     """Build a minimal HTML summary of all validation results."""
     rows = []
     for r in results:
