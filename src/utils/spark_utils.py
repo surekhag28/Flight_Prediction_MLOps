@@ -27,6 +27,10 @@ logger.info(f"Minio Endpoint :  {MINIO_ENDPOINT}")
 
 BRONZE_BASE = f"s3a://{BUCKET}/bronze/opensky"
 SILVER_BASE = f"s3a://{BUCKET}/silver/flight_states"
+GOLD_FLIGHTS_BASE = f"s3a://{BUCKET}/gold/flight_state_features"
+GOLD_CONGESTION_BASE = f"s3a://{BUCKET}/gold/airport_congestion_features"
+GOLD_ROUTES_BASE = f"s3a://{BUCKET}/gold/route_features"
+GOLD_LABELS_BASE = f"s3a://{BUCKET}/gold/labels"
 
 
 def get_spark_session(

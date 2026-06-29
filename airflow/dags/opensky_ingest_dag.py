@@ -142,6 +142,12 @@ def _bronze_to_silver(**context):
     )
 
 
+def _silver_to_gold_flights(**context):
+    return _run_spark_job(
+        "silver_to_gold", "src.processing.silver_to_gold_flights", **context
+    )
+
+
 # def test():
 #     print("in airflow")
 #     _ingest()
@@ -167,5 +173,8 @@ with DAG(
     bronze2silver = PythonOperator(
         task_id="spark_bronze_to_silver", python_callable=_bronze_to_silver
     )
+    gold_flights = PythonOperator(
+        task_id="spark_silver_to_gold_flights", python_callable=_silver_to_gold_flights
+    )
 
-    fetch >> validate >> validate_bronze >> bronze2silver
+    fetch >> validate >> validate_bronze >> bronze2silver >> gold_flights
