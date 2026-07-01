@@ -1,14 +1,35 @@
 import os
+import yaml
 from pathlib import Path
 from typing import Literal
+from pydantic import BaseModel
 from pydantic import Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import (
+    BaseSettings,
+    SettingsConfigDict,
+    PydanticBaseSettingsSource,
+)
 
-PROJECT_ROOT = Path(__file__).parent.parent
-ENV_FILE_PATH = PROJECT_ROOT / ".env"
+ENV_FILE_PATH = Path(__file__).parent.parent / ".env"
+YAML_FILE_PATH = Path(__file__).parent / "settings.yaml"
 
 
-class BaseConfigSettings(BaseSettings):
+class MinioSettings(BaseModel):
+    endpoint: str = "http://minio:9000"
+    access_key: str = "minioadmin"
+    secret_key: str = "minioadmin"
+    bucket: str = "aviation-lake"
+
+
+class AirportConfig(BaseModel):
+    code: str
+    name: str
+    lat: float
+    lon: float
+
+
+class Settings(BaseSettings):
+
     model_config = SettingsConfigDict(
         env_file=[".env", str(ENV_FILE_PATH)],
         extra="ignore",
@@ -17,29 +38,42 @@ class BaseConfigSettings(BaseSettings):
         case_sensitive=False,
     )
 
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls,
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ):
+        class YamlSettingsSource(PydanticBaseSettingsSource):
+            def __call__(self):
+                if not YAML_FILE_PATH.exists():
+                    return {}
+                with YAML_FILE_PATH.open() as f:
+                    return yaml.safe_load(f) or {}
 
-class MinioSettings(BaseConfigSettings):
-    model_config = SettingsConfigDict(
-        env_file=[".env", str(ENV_FILE_PATH)],
-        env_prefix="MINIO__",
-        extra="ignore",
-        frozen=True,
-        case_sensitive=False,
-    )
+            def get_field_value(self, field, field_name):
+                return None, field_name, False
 
-    endpoint: str = "http://minio:9000"
-    access_key: str = "minioadmin"
-    secret_key: str = "minioadmin"
-    bucket: str = "aviation-lake"
+        yaml_settings = YamlSettingsSource(settings_cls)
 
+        return (
+            init_settings,
+            yaml_settings,
+            env_settings,
+            dotenv_settings,
+            file_secret_settings,
+        )
 
-class Settings(BaseConfigSettings):
     api_version: str = "0.1.0"
     debug: bool = True
     environment: Literal["development", "staging", "production"] = "development"
     service_name: str = "flight-prediction-ml"
 
     miniosettings: MinioSettings = Field(default_factory=MinioSettings)
+    airports: list[AirportConfig] = Field(default_factory=list)
 
 
 def get_settings() -> Settings:

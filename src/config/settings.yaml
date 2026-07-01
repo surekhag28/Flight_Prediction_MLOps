@@ -3,3 +3,55 @@ minio:
   access_key: minioadmin
   secret_key: minioadmin
   bucket: aviation-lake
+
+airports:
+  - { code: YMML, name: Melbourne,       lat: -37.673, lon: 144.843 }
+  - { code: YSSY, name: Sydney,          lat: -33.946, lon: 151.177 }
+  - { code: YBBN, name: Brisbane,        lat: -27.384, lon: 153.117 }
+  - { code: YPER, name: Perth,           lat: -31.940, lon: 115.967 }
+  - { code: EGLL, name: London Heathrow, lat: 51.477,  lon: -0.461  }
+  - { code: EHAM, name: Amsterdam,       lat: 52.308,  lon: 4.764   }
+  - { code: EDDF, name: Frankfurt,       lat: 50.033,  lon: 8.571   }
+  - { code: LFPG, name: Paris CDG,       lat: 49.009,  lon: 2.548   }
+  - { code: LEMD, name: Madrid,          lat: 40.472,  lon: -3.561  }
+  - { code: LIRF, name: Rome,            lat: 41.800,  lon: 12.239  }
+  - { code: KLAX, name: Los Angeles,     lat: 33.943,  lon: -118.408 }
+  - { code: KJFK, name: New York JFK,    lat: 40.640,  lon: -73.779 }
+  - { code: KORD, name: Chicago O'Hare,  lat: 41.978,  lon: -87.904 }
+  - { code: KATL, name: Atlanta,         lat: 33.640,  lon: -84.427 }
+  - { code: KDFW, name: Dallas,          lat: 32.896,  lon: -97.038 }
+  - { code: KSFO, name: San Francisco,   lat: 37.619,  lon: -122.375 }
+  - { code: KDEN, name: Denver,          lat: 39.856,  lon: -104.674 }
+  - { code: KSEA, name: Seattle,         lat: 47.449,  lon: -122.309 }
+  - { code: VHHH, name: Hong Kong,       lat: 22.309,  lon: 113.915 }
+  - { code: ZBAA, name: Beijing,         lat: 40.080,  lon: 116.584 }
+  - { code: ZSPD, name: Shanghai Pudong, lat: 31.144,  lon: 121.805 }
+  - { code: RJTT, name: Tokyo Haneda,    lat: 35.549,  lon: 139.779 }
+  - { code: RKSI, name: Seoul Incheon,   lat: 37.460,  lon: 126.440 }
+  - { code: WSSS, name: Singapore,       lat: 1.359,   lon: 103.989 }
+  - { code: OMDB, name: Dubai,           lat: 25.253,  lon: 55.364  }
+  - { code: OBBI, name: Bahrain,         lat: 26.270,  lon: 50.634  }
+  - { code: HECA, name: Cairo,           lat: 30.122,  lon: 31.406  }
+  - { code: FAOR, name: Johannesburg,    lat: -26.133, lon: 28.242  }
+  - { code: DNMM, name: Lagos,           lat: 6.577,   lon: 3.321   }
+  - { code: HAAB, name: Addis Ababa,     lat: 8.978,   lon: 38.799  }
+  - { code: VIDP, name: Delhi,           lat: 28.556,  lon: 77.101  }
+  - { code: VABB, name: Mumbai,          lat: 19.089,  lon: 72.868  }
+  - { code: VECC, name: Kolkata,         lat: 22.655,  lon: 88.447  }
+  - { code: VOMM, name: Chennai,         lat: 12.990,  lon: 80.169  }
+  - { code: WIDD, name: Denpasar Bali,   lat: -8.748,  lon: 115.167 }
+  - { code: WADD, name: Jakarta,         lat: -6.127,  lon: 106.656 }
+  - { code: VTBS, name: Bangkok,         lat: 13.681,  lon: 100.747 }
+  - { code: VYYY, name: Yangon,          lat: 16.907,  lon: 96.134  }
+  - { code: WMKK, name: Kuala Lumpur,    lat: 2.745,   lon: 101.710 }
+  - { code: RPLL, name: Manila,          lat: 14.508,  lon: 121.019 }
+  - { code: SBGR, name: Sao Paulo,       lat: -23.432, lon: -46.469 }
+  - { code: SBGL, name: Rio de Janeiro,  lat: -22.810, lon: -43.251 }
+  - { code: SKBO, name: Bogota,          lat: 4.702,   lon: -74.147 }
+  - { code: SEQM, name: Quito,           lat: -0.129,  lon: -78.358 }
+  - { code: MMMX, name: Mexico City,     lat: 19.436,  lon: -99.072 }
+  - { code: MHTG, name: Tegucigalpa,     lat: 14.061,  lon: -87.217 }
+  - { code: CYYZ, name: Toronto,         lat: 43.677,  lon: -79.630 }
+  - { code: CYVR, name: Vancouver,       lat: 49.194,  lon: -123.184 }
+  - { code: NZAA, name: Auckland,        lat: -37.008, lon: 174.792 }
+  - { code: NFFN, name: Nadi Fiji,       lat: -17.755, lon: 177.443 }

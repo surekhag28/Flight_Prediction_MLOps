@@ -144,7 +144,15 @@ def _bronze_to_silver(**context):
 
 def _silver_to_gold_flights(**context):
     return _run_spark_job(
-        "silver_to_gold", "src.processing.silver_to_gold_flights", **context
+        "silver_to_gold_flights", "src.processing.silver_to_gold_flights", **context
+    )
+
+
+def _silver_to_gold_congestion(**context):
+    return _run_spark_job(
+        "silver_to_gold_congestion",
+        "src.processing.silver_to_gold_congestion",
+        **context,
     )
 
 
@@ -176,5 +184,16 @@ with DAG(
     gold_flights = PythonOperator(
         task_id="spark_silver_to_gold_flights", python_callable=_silver_to_gold_flights
     )
+    gold_congestion = PythonOperator(
+        task_id="spark_silver_to_gold_congestion",
+        python_callable=_silver_to_gold_congestion,
+    )
 
-    fetch >> validate >> validate_bronze >> bronze2silver >> gold_flights
+    (
+        fetch
+        >> validate
+        >> validate_bronze
+        >> bronze2silver
+        >> gold_flights
+        >> gold_congestion
+    )
