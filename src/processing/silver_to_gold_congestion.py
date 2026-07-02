@@ -7,6 +7,9 @@ For each snapshot timestamp and each of major 50 airports, computes below featur
     3. departures_last_30m: aircraft climbing (vertical_rate > 1 m/s)
     4. congestion_score: aircraft_count_50km / max_observed (0-1)
     5. avg_altitude_50km: mean altitude of aircraft nearby
+
+Uses as broadcast join startegy: broadcast airports table,
+then compute per aircraft per airport distances with a spark UDF.
 """
 
 from __future__ import annotations

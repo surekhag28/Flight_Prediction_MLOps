@@ -156,6 +156,12 @@ def _silver_to_gold_congestion(**context):
     )
 
 
+def _silver_to_gold_routes(**context):
+    return _run_spark_job(
+        "silver_to_gold_routes", "src.processing.silver_to_gold_routes", **context
+    )
+
+
 # def test():
 #     print("in airflow")
 #     _ingest()
@@ -188,6 +194,9 @@ with DAG(
         task_id="spark_silver_to_gold_congestion",
         python_callable=_silver_to_gold_congestion,
     )
+    gold_routes = PythonOperator(
+        task_id="spark_silver_to_gold_routes", python_callable=_silver_to_gold_routes
+    )
 
     (
         fetch
@@ -196,4 +205,5 @@ with DAG(
         >> bronze2silver
         >> gold_flights
         >> gold_congestion
+        >> gold_routes
     )
