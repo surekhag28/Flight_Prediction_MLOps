@@ -53,9 +53,9 @@ def get_spark_session(
         # Performance
         .config("spark.sql.adaptive.enabled", "true")
         .config("spark.sql.shuffle.partitions", "8")
-        .config("spark.driver.memory", "512m")
-        .config("spark.executor.memory", "512m")
-        .config("spark.driver.maxResultSize", "256m")
+        .config("spark.driver.memory", "2g")
+        .config("spark.executor.memory", "2g")
+        .config("spark.driver.maxResultSize", "1g")
         # Parquet
         .config("spark.sql.parquet.datetimeRebaseModeInWrite", "CORRECTED")
         .config("spark.sql.parquet.int96RebaseModeInWrite", "CORRECTED")

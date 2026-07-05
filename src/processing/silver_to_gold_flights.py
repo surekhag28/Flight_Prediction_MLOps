@@ -61,6 +61,7 @@ def run(spark: SparkSession, pipeline_run_id: str) -> dict:
     try:
         logger.info(f"Reading silver data from {SILVER_BASE}")
         silver_df = spark.read.parquet(SILVER_BASE)
+        logger.info(silver_df.head(5))
 
         # considering flights which are flying
         df = silver_df.filter(~F.col("on_ground")).filter(
@@ -117,7 +118,7 @@ def run(spark: SparkSession, pipeline_run_id: str) -> dict:
             "latitude",
             "longitude",
             F.col("velocity").alias("speed_ms"),
-            F.col("baro_altitude").alias("altitude_ms"),
+            F.col("baro_altitude").alias("altitude_m"),
             F.col("vertical_rate").alias("vertical_rate_ms"),
             F.col("heading").alias("heading_deg"),
             "heading_change_5m",
@@ -128,9 +129,11 @@ def run(spark: SparkSession, pipeline_run_id: str) -> dict:
             F.col("on_ground").cast("int").alias("is_on_ground"),
         ).dropna(subset=["aircraft_id", "event_timestamp"])
 
+        logger.info(gold_df.head(5))
+
         gold_df = gold_df.withColumn("created_timestamp", F.current_timestamp())
 
-        (gold_df.coalesce(4).write.mode("overwrite").parquet(GOLD_FLIGHTS_BASE))
+        (gold_df.coalesce(16).write.mode("overwrite").parquet(GOLD_FLIGHTS_BASE))
 
         count = spark.read.parquet(GOLD_FLIGHTS_BASE).count()
         meta.add_metric("gold_rows_written", count)

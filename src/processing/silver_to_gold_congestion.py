@@ -135,7 +135,7 @@ def run(spark: SparkSession, pipeline_run_id: str) -> dict:
 
         meta.add_metric("max_aircraft_count_50km", max_count)
 
-        (gold_df.coalesce(4).write.mode("overwrite").parquet(GOLD_CONGESTION_BASE))
+        (gold_df.coalesce(16).write.mode("overwrite").parquet(GOLD_CONGESTION_BASE))
 
         count = spark.read.parquet(GOLD_CONGESTION_BASE).count()
         meta.add_metric("gold_rows_written", count)
