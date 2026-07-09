@@ -1,0 +1,9 @@
+project: aviation_ml
+provider: local
+registry: /opt/feature_repo/registry.db
+online_store:
+  type: redis
+  connection_string: "redis:6379,db=1"
+offline_store:
+  type: file
+entity_key_serialization_version: 2

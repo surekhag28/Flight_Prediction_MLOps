@@ -105,6 +105,58 @@ services:
           memory: 1G
     restart: always
 
+  # ── Redis (Feast online store) ────────────────────────────────────────────
+  redis:
+    image: redis:7.2-bookworm
+    command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru --save ""
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+    restart: always
+
+  
+   # ── MLflow ───────────────────────────────────────────────────────────────
+
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.22.4
+    environment:
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
+      MLFLOW_S3_ENDPOINT_URL: http://localhost:9002 #http://minio:9000
+    ports:
+      - "5001:5000"
+    entrypoint: /bin/bash
+    command: >
+      -c "pip install --quiet psycopg2-binary boto3 &&
+      mlflow server
+      --host 0.0.0.0
+      --port 5000
+      --backend-store-uri postgresql+psycopg2://airflow:airflow@postgres/mlflow
+      --default-artifact-root s3://mlflow/artifacts
+      --serve-artifacts"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    restart: always
 
  # ── Airflow ───────────────────────────────────────────────────────────────
   airflow-init:
@@ -188,6 +240,21 @@ services:
       - ./src:/app/src
 
     restart: on-failure
+
+  # ── Feast UI ──────────────────────────────────────────────────────────────
+  feast-ui:
+    image: python:3.11-slim
+    command: >
+      bash -c "pip install --quiet 'feast[redis]==0.50.0' 'pyarrow>=16,<=17' 'email-validator>=2.0' &&
+               cd /opt/feature_repo && feast ui --host 0.0.0.0 --port 8888"
+    volumes:
+      - ./feature_repo:/opt/feature_repo
+    ports:
+      - "8889:8888"
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: always
 
 volumes:
   minio-data:

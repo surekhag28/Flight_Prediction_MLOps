@@ -203,7 +203,5 @@ with DAG(
         >> validate
         >> validate_bronze
         >> bronze2silver
-        >> gold_flights
-        >> gold_congestion
-        >> gold_routes
+        >> [gold_flights, gold_congestion, gold_routes]
     )

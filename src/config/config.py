@@ -1,7 +1,7 @@
 import os
 import yaml
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Any
 from pydantic import BaseModel
 from pydantic import Field
 from pydantic_settings import (
@@ -15,7 +15,7 @@ YAML_FILE_PATH = Path(__file__).parent / "settings.yaml"
 
 
 class MinioSettings(BaseModel):
-    endpoint: str = "http://minio:9000"
+    endpoint: str = "http://localhost:9002"  # "http://minio:9000"
     access_key: str = "minioadmin"
     secret_key: str = "minioadmin"
     bucket: str = "aviation-lake"
@@ -26,6 +26,82 @@ class AirportConfig(BaseModel):
     name: str
     lat: float
     lon: float
+
+
+class ThresholdsConfig(BaseModel):
+    delay_risk_altitude_m: float = 3000.0
+    delay_risk_velocity_m: float = 100.0
+    congestion_high: float = 0.70
+
+
+class HPOConfig(BaseModel):
+    n_trials: int = 30
+    sample_rows: int = 50_000
+    n_cv_folds: int = 3
+    min_sample_rows_delay: int = 500
+    min_sample_rows_congestion: int = 500
+    min_sample_rows_anomaly: int = 500
+
+
+class DelayTrainingConfig(BaseModel):
+    target_column: str = "delay_risk"
+    feature_columns: list[str] = Field(
+        default_factory=lambda: [
+            "speed_ms",
+            "altitude_m",
+            "vertical_rate_ms",
+            "heading_change_5m",
+            "avg_speed_15m",
+            "aircraft_count_50km",
+            "congestion_score",
+            "hour_of_day",
+            "day_of_week",
+        ]
+    )
+    max_rows: int = 500_000
+    test_size: float = 0.15
+    val_size: float = 0.15
+    random_state: int = 42
+    min_auc: float = 0.62
+    min_f1: float = 0.50
+    lgbm_params: dict[str, Any] = Field(
+        default_factory=lambda: {
+            "n_estimators": 500,
+            "learning_rate": 0.05,
+            "num_leaves": 31,
+            "max_depth": -1,
+            "subsample": 0.8,
+            "colsample_bytree": 0.8,
+            "class_weight": "balanced",
+        }
+    )
+
+
+class TrainingConfig(BaseModel):
+    delay: DelayTrainingConfig = Field(default_factory=DelayTrainingConfig)
+
+
+class MLflowExperimentsConfig(BaseModel):
+    delay: str = "Aviation MLOps/Delay Risk"
+    congestion: str = "Aviation MLOPs/Congestion"
+    anomaly: str = "Aviation MLOps/Anomaly Detection"
+    pipeline: str = "Aviation MLOps/Pipeline"
+
+
+class MLflowModelNamesConfig(BaseModel):
+    delay: str = "aviation-delay-risk-model"
+    congestion: str = "aviation-congestion-model"
+    anomaly: str = "aviation-anomaly-model"
+
+
+class MLflowConfig(BaseModel):
+    tracking_uri: str = "http://localhost:5001"  # "http://mlflow:5000"
+    dagshub_username: str = ""
+    dagshub_password: str = ""
+    experiments: MLflowExperimentsConfig = Field(
+        default_factory=MLflowExperimentsConfig
+    )
+    model_names: MLflowModelNamesConfig = Field(default_factory=MLflowModelNamesConfig)
 
 
 class Settings(BaseSettings):
@@ -74,6 +150,10 @@ class Settings(BaseSettings):
 
     miniosettings: MinioSettings = Field(default_factory=MinioSettings)
     airports: list[AirportConfig] = Field(default_factory=list)
+    thresholds: ThresholdsConfig = Field(default_factory=ThresholdsConfig)
+    hpo: HPOConfig = Field(default_factory=HPOConfig)
+    mlflow: MLflowConfig = Field(default_factory=MLflowConfig)
+    training: TrainingConfig = Field(default_factory=TrainingConfig)
 
 
 def get_settings() -> Settings:

@@ -32,3 +32,21 @@ class DataQualityError(AviationMLError):
     """ETL quality gate failed (row count, schema complaince, null ratio)."""
 
     pass
+
+
+class InsufficientDataError(AviationMLError):
+    """Dataset has fewer rows than the minimum required for training and HPO"""
+
+    pass
+
+
+class MlflowError(AviationMLError):
+    """Error communicating with MLflow tracking server"""
+
+    pass
+
+
+class HPOError(AviationMLError):
+    """Error during Optuna Hyperparameter optimisation"""
+
+    pass
