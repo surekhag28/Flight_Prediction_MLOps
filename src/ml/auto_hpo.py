@@ -108,24 +108,25 @@ def auto_tune_delay(
                 params = spec.search_space(trial, algo_name)
 
                 n_pos = int(sum(y_s))  # total positive samples
-                n_splits = min(n_pos, max(2, n_pos))  #
+                n_splits = min(N_CV_FOLDS, max(2, n_pos))  #
                 cv = StratifiedKFold(
                     n_splits=n_splits, shuffle=True, random_state=RANDOM_STATE
                 )
 
                 aucs = []
                 for train_idx, val_idx in cv.split(X_s, y_s):
-                    if len(
-                        np.unique(y_s[val_idx]) < 2
+                    if (
+                        len(np.unique(y_s[val_idx])) < 2
                     ):  # ignore the fold containing only one class
                         continue
-                    if len(np.unique(train_idx) < 2):
+                    if len(np.unique(train_idx)) < 2:
                         continue
 
                     m = spec.factory(params, RANDOM_STATE)
                     m.fit(X_s[train_idx], y_s[train_idx])
 
                     prob = m.predict_proba(X_s[val_idx])[:, 1]
+
                     auc_val = roc_auc_score(y_s[val_idx], prob)
                     if np.isnan(auc_val):
                         continue
@@ -134,6 +135,7 @@ def auto_tune_delay(
                 if not aucs:
                     return 0.0
                 mean_auc = float(np.mean(aucs))  # avg auc across folds for single trial
+                
 
                 with mlflow.start_run(nested=True, run_name=f"trial_{trial.number}"):
                     mlflow.log_params(
@@ -145,6 +147,7 @@ def auto_tune_delay(
                     mlflow.log_metric("cv_auc_roc", mean_auc)
                     mlflow.log_metric("trial_number", trial.number)
                     mlflow.set_tag("algorithm", algo_name)
+                    
 
                 return mean_auc
 

@@ -40,11 +40,14 @@ def setup_mlflow() -> MlflowClient:
     uri = os.getenv("MLFLOW_TRACKING_URI", settings.mlflow.tracking_uri)
     mlflow.set_tracking_uri(uri)
     logger.info(f"MLflow tracking uri: {uri}")
+    logger.info(os.getenv("MLFLOW_S3_ENDPOINT_URL"))
 
     # MinIO artifact store credentials
     os.environ.setdefault(
-        "MLFLOW_S3_ENDPOINT_URI",
-        os.getenv("MLFLOW_S3_ENDPOINT_URL", "http://minio:9000"),
+        "MLFLOW_S3_ENDPOINT_URL",
+        os.getenv(
+            "MLFLOW_S3_ENDPOINT_URL", "http://localhost:9002"
+        ),  # "http://minio:9000"
     )
     os.environ.setdefault(
         "AWS_ACCESS_KEY_ID", os.getenv("AWS_ACCESS_KEY_ID", "minioadmin")
@@ -53,7 +56,7 @@ def setup_mlflow() -> MlflowClient:
         "AWS_SECRET_ACCESS_KEY", os.getenv("AWS_SECRET_ACCESS_KEY", "minioadmin")
     )
 
-    logger.info(f"MLflow s3 endpoint url: {os.getenv('MLFLOW_S3_ENDPOINT_URI')}")
+    logger.info(f"MLflow s3 endpoint url: {os.getenv('MLFLOW_S3_ENDPOINT_URL')}")
     return MlflowClient()
 
 

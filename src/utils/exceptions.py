@@ -50,3 +50,9 @@ class HPOError(AviationMLError):
     """Error during Optuna Hyperparameter optimisation"""
 
     pass
+
+
+class ModelTrainingError(AviationMLError):
+    """Error during Model training"""
+
+    pass

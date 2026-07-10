@@ -2,13 +2,17 @@ from __future__ import annotations
 
 import s3fs
 import pandas as pd
+import mlflow
 import pyarrow.parquet as pq
+from typing import Any
+from contextlib import contextmanager
 from src.config.config import get_settings
 from src.core.logger import get_logger
 
 from src.core.logger import get_logger
 from src.utils.exceptions import InsufficientDataError
 from src.ml.algorithms import AlgorithmSpec
+from src.utils.mlflow_utils import get_or_create_experiment
 
 settings = get_settings()
 logger = get_logger(__name__)
@@ -45,3 +49,34 @@ def resolve_algorithm(
     if algorithm in registry:
         return algorithm, registry[algorithm]
     return default, registry[default]
+
+
+@contextmanager
+def standalone_run(
+    experiment_name: str,
+    run_name: str,
+    pipeline_run_id: str,
+    algorithm: str,
+    extra_tags: dict[str, Any] | None = None,
+):
+    """Context manager for standalone training (no parent).
+    Used when running the training scripts outside the airflow DAG.
+    """
+
+    exp_id = get_or_create_experiment(experiment_name)
+    tags = {"pipeline_run_id": pipeline_run_id, "algorithm": algorithm}
+    if extra_tags:
+        tags.update(extra_tags)
+    with mlflow.start_run(experiment_id=exp_id, run_name=run_name, tags=tags) as run:
+        yield run
+
+
+def fit_model(
+    model: Any, algorithm: str, X_train, y_train, X_test=None, y_test=None
+) -> None:
+    """Fit a model with best algorithm found durin HPO process"""
+
+    if X_test is not None:
+        model.fit(X_train, y_train, eval_set=[X_test, y_test], callbacks=[])
+    else:
+        model.fit(X_train, y_train)

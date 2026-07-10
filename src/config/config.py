@@ -58,7 +58,7 @@ class DelayTrainingConfig(BaseModel):
             "day_of_week",
         ]
     )
-    max_rows: int = 500_000
+    max_rows: int = 500000
     test_size: float = 0.15
     val_size: float = 0.15
     random_state: int = 42
@@ -95,7 +95,8 @@ class MLflowModelNamesConfig(BaseModel):
 
 
 class MLflowConfig(BaseModel):
-    tracking_uri: str = "http://localhost:5001"  # "http://mlflow:5000"
+    tracking_uri: str = "http://localhost:5001"
+    # "http://mlflow:5000"
     dagshub_username: str = ""
     dagshub_password: str = ""
     experiments: MLflowExperimentsConfig = Field(
