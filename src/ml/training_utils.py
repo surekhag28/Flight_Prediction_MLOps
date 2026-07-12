@@ -20,6 +20,7 @@ logger = get_logger(__name__)
 
 def get_fs() -> s3fs.S3FileSystem:
     """Create an S3FileSystem pointing at the configured MinIO instance"""
+    logger.info(f"In get_fs: {settings.miniosettings.endpoint}")
     return s3fs.S3FileSystem(
         endpoint_url=settings.miniosettings.endpoint,
         key=settings.miniosettings.access_key,
@@ -33,9 +34,12 @@ def load_parquet_data(path: str, fs: s3fs.S3FileSystem, name: str) -> pd.DataFra
     Raises InsufficientDataError if no files are present.
     """
 
-    files = fs.glob(f"{path}/**/*.parquet")
+    files = fs.glob(f"{path}/*.parquet")
+    # files = files[:3]
+    logger.info(f"Found {len(files)} files at {path}")
+
     if not files:
-        raise InsufficientDataError(f"No {name} files found", context={"path": path})
+        raise InsufficientDataError(f"No {name} files found: {path}")
     dfs = [pq.read_table(fs.open(f)).to_pandas() for f in files]
     df = pd.concat(dfs, ignore_index=True)
     logger.info(f"Loaded {name} training data: total rows = {len(df)}")

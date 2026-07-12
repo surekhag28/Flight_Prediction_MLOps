@@ -208,9 +208,11 @@ def run(
     }
 
 
-if __name__ == "__main__":
+""" if __name__ == "__main__":
 
     result = run(algorithm="lgbm")
-    print(len(result.keys()))
-    print(result.get("metrics"))
+    logger.info(result.keys())
+    # print(len(result.keys()))
+    # print(result.get("metrics"))
     # print(json.dumps(result, indent=2, default=str))
+ """

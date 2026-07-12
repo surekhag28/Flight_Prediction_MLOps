@@ -116,7 +116,7 @@ def run(pipeline_run_id: str | None = None) -> dict:
     output_path = write_labels(labelled_df, fs)
     summary = {
         "pipeline_run_id": pipeline_run_id,
-        "total rows": len(labelled_df),
+        "total_rows": len(labelled_df),
         "delay_risk_count": int(labelled_df["delay_risk"].sum()),
         "delay_risk_rate": float(labelled_df["delay_risk"].mean()),
         "output_path": output_path,

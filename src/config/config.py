@@ -15,7 +15,7 @@ YAML_FILE_PATH = Path(__file__).parent / "settings.yaml"
 
 
 class MinioSettings(BaseModel):
-    endpoint: str = "http://localhost:9002"  # "http://minio:9000"
+    endpoint: str = "http://minio:9000"  # "http://localhost:9002"
     access_key: str = "minioadmin"
     secret_key: str = "minioadmin"
     bucket: str = "aviation-lake"
@@ -35,8 +35,8 @@ class ThresholdsConfig(BaseModel):
 
 
 class HPOConfig(BaseModel):
-    n_trials: int = 30
-    sample_rows: int = 50_000
+    n_trials: int = 10
+    sample_rows: int = 50000
     n_cv_folds: int = 3
     min_sample_rows_delay: int = 500
     min_sample_rows_congestion: int = 500
