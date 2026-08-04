@@ -18,6 +18,7 @@ import typing
 from datetime import UTC, datetime
 
 import pandas as pd
+import pyarrow as pa
 import s3fs
 import pyarrow.parquet as pq
 from src.config.config import get_settings
@@ -34,68 +35,125 @@ GOLD_CONGESTION_PATH = f"s3://{BUCKET}/gold/airport_congestion_features"
 GOLD_LABELS_PATH = f"s3://{BUCKET}/gold/labels"
 
 
-def read_gold_parquet(path: str, fs: s3fs.S3FileSystem) -> pd.DataFrame:
+def read_gold_parquet(
+    path: str, fs: s3fs.S3FileSystem, mode: str = "full"
+) -> pd.DataFrame:
     from src.ml.training_utils import load_parquet_data
 
     try:
-        return load_parquet_data(path.replace("s3://", ""), fs, path.split("/")[-1])
+        return load_parquet_data(
+            path.replace("s3://", ""), fs, path.split("/")[-1], mode
+        )
     except InsufficientDataError as e:
-        raise FileNotFoundError(f"No parquet files found at {path}") from e
+        print(e)
+        raise
+        # raise FileNotFoundError(f"No parquet files found at {path}") from e
 
 
-def generate_delay_labels(
-    flights_df: pd.DataFrame, congestion_df: pd.DataFrame
-) -> pd.DataFrame:
-    """Join flight features with nearby airport congestion, compute delay_risk proxy"""
+def build_congestion_lookup(congestion_df: pd.DataFrame) -> dict:
+    """Creates hourly maximum congestion score
 
-    congestion_df = congestion_df.copy()
+    Example:
+    {
+        Timestamp("2026-07-29 10:00"): 0.72,
+        Timestamp("2026-07-29 11:00"): 0.65
+    }
+
+    """
+
     congestion_df["snapshot_hour"] = pd.to_datetime(
         congestion_df["event_timestamp"]
     ).dt.floor("h")
-    max_congestion = (
-        congestion_df.groupby("snapshot_hour")["congestion_score"]
-        .max()
-        .reset_index()
-        .rename(columns={"congestion_score": "max_congestion_score"})
-    )
 
-    flights_df = flights_df.copy()
+    max_congestion = congestion_df.groupby("snapshot_hour")["congestion_score"].max()
+
+    logger.info(f"Created congestion lookup with {len(max_congestion)} hours")
+
+    return max_congestion.to_dict()
+
+
+# Generate labels per batch of data
+
+
+def generate_delay_labels(
+    flights_df: pd.DataFrame, congestion_lookup: dict
+) -> pd.DataFrame:
+    """Generate delay_risk labels for one flight dataframe
+    This processes one parquet file at a time.
+    """
+
     flights_df["snapshot_hour"] = pd.to_datetime(
         flights_df["event_timestamp"]
     ).dt.floor("h")
 
-    merged = flights_df.merge(max_congestion, on="snapshot_hour", how="left")
-    merged["max_congestion_score"] = merged["max_congestion_score"].fillna(0.0)
-
-    altitude_slow = (merged["altitude_m"] > THRESHOLDS.delay_risk_altitude_m) & (
-        merged["speed_ms"] < THRESHOLDS.delay_risk_velocity_m
+    flights_df["max_congestion_score"] = (
+        flights_df["snapshot_hour"].map(congestion_lookup).fillna(0.0)
     )
 
-    high_congestion = merged["max_congestion_score"] > THRESHOLDS.congestion_high
+    altitude_slow = (flights_df["altitude_m"] > THRESHOLDS.delay_risk_altitude_m) & (
+        flights_df["speed_ms"] < THRESHOLDS.delay_risk_velocity_m
+    )
 
-    merged["delay_risk"] = (altitude_slow | high_congestion).astype(
-        int
-    )  # proxy delay labels
+    high_congestion = flights_df["max_congestion_score"] > THRESHOLDS.congestion_high
 
-    delay_rate = merged["delay_risk"].mean()
+    flights_df["delay_risk"] = (altitude_slow | high_congestion).astype("uint8")
+
+    delay_rate = flights_df["delay_risk"].mean()
+
     logger.info(
-        "Delay stats: %d total, %.1f%% delay risk", len(merged), delay_rate * 100
+        f"Generated labels: rows={len(flights_df)} and delay_rate={delay_rate*100}"
     )
 
-    return merged
+    return flights_df
 
 
-def write_labels(df: pd.DataFrame, fs: s3fs.S3FileSystem) -> str:
-    """Write labelled dataset to gold/labels/ as parquet file"""
-    import pyarrow as pa
+def write_labels(flight_iterator, congestion_lookup, fs: s3fs.S3FileSystem) -> dict:
+    """Write one labels.parquet file."""
 
-    table = pa.Table.from_pandas(df)
+    import gc
+
     file_path = f"{GOLD_LABELS_PATH.replace('s3://','')}/labels.parquet"
-    with fs.open(file_path, "wb") as f:
-        pq.write_table(table, f)
-    logger.info(f"Labels written to s3://{file_path}")
 
-    return f"s3://{file_path}"
+    total_rows = 0
+    delay_count = 0
+    writer = None
+
+    f = fs.open(file_path, "wb")
+    writer = None
+    try:
+
+        for index, flights_df in enumerate(flight_iterator):
+            logger.info(f"Processing flight parquet file: {index}")
+
+            labelled_df = generate_delay_labels(flights_df, congestion_lookup)
+            table = pa.Table.from_pandas(labelled_df, preserve_index=False)
+
+            if writer is None:
+                writer = pq.ParquetWriter(f, table.schema)
+
+            writer.write_table(table)
+
+            total_rows += len(labelled_df)
+            delay_count += int(labelled_df["delay_risk"].sum())
+
+            del flights_df
+            del labelled_df
+            del table
+            gc.collect()
+
+    finally:
+        if writer is not None:
+            writer.close()
+        f.close()
+
+    logger.info(f"labels written successfully: rows={total_rows}")
+
+    return {
+        "total_rows": total_rows,
+        "delay_risk_count": delay_count,
+        "delay_risk_rate": (delay_count / total_rows if total_rows > 0 else 0),
+        "output_path": (f"s3://{file_path}"),
+    }
 
 
 def run(pipeline_run_id: str | None = None) -> dict:
@@ -106,24 +164,18 @@ def run(pipeline_run_id: str | None = None) -> dict:
 
     logger.info(f"Generating proxy labels for (pipeline_run_id= {pipeline_run_id})")
     fs = get_fs()
-    flights_df = read_gold_parquet(GOLD_FLIGHTS_PATH, fs)
-    logger.info(f"Flight features: {len(flights_df)} rows")
 
     congestion_df = read_gold_parquet(GOLD_CONGESTION_PATH, fs)
     logger.info(f"Airport congestion features: {len(congestion_df)} rows")
+    congestion_lookup = build_congestion_lookup(congestion_df)
 
-    labelled_df = generate_delay_labels(flights_df, congestion_df)
-    output_path = write_labels(labelled_df, fs)
-    summary = {
-        "pipeline_run_id": pipeline_run_id,
-        "total_rows": len(labelled_df),
-        "delay_risk_count": int(labelled_df["delay_risk"].sum()),
-        "delay_risk_rate": float(labelled_df["delay_risk"].mean()),
-        "output_path": output_path,
-        "status": "success",
-    }
+    del congestion_df
 
-    print(labelled_df.head(5))
+    flights_iterator = read_gold_parquet(GOLD_FLIGHTS_PATH, fs, "iterator")
+    summary = write_labels(flights_iterator, congestion_lookup, fs)
+    summary.update({"pipeline_run_id": pipeline_run_id, "status": "success"})
+
+    logger.info(f"Label generation completed: {summary}")
 
     return summary
 

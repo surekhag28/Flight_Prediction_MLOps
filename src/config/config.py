@@ -59,6 +59,7 @@ class DelayTrainingConfig(BaseModel):
         ]
     )
     max_rows: int = 500000
+    sample_rows: int = 50000
     test_size: float = 0.15
     val_size: float = 0.15
     random_state: int = 42

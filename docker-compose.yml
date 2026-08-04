@@ -10,6 +10,8 @@ x-airflow-common: &airflow-common
     AIRFLOW__CORE__FERNET_KEY: 'ZmDfcTF7_60GrrY167zsiPd67pEvs0aGOv2oasOM1Pg='
     AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
     AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+    AIRFLOW__CORE__PARALLELISM: 1
+    AIRFLOW__CORE__MAX_ACTIVE_TASKS_PER_DAG: 1
     AIRFLOW__API__AUTH_BACKENDS: 'airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session'
     AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'
     AIRFLOW__WEBSERVER__EXPOSE_CONFIG: 'true'
@@ -203,6 +205,10 @@ services:
   airflow-scheduler:
     <<: *airflow-common
     command: scheduler
+
+    mem_limit: 16g
+    cpus: 4
+    
     healthcheck:
       test: ["CMD", "airflow", "jobs", "check", "--job-type", "SchedulerJob", "--allow-multiple", "--limit", "100"]
       interval: 60s
@@ -216,8 +222,8 @@ services:
         condition: service_completed_successfully
       # redis:
       #   condition: service_healthy
-      # mlflow:
-      #   condition: service_healthy
+      mlflow:
+        condition: service_healthy
 
   ingestion:
     build: 

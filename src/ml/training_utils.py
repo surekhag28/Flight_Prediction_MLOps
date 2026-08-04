@@ -28,22 +28,81 @@ def get_fs() -> s3fs.S3FileSystem:
     )
 
 
-def load_parquet_data(path: str, fs: s3fs.S3FileSystem, name: str) -> pd.DataFrame:
+def load_parquet_data(
+    path: str, fs: s3fs.S3FileSystem, name: str, mode: str = "full"
+) -> pd.DataFrame:
     """
     Loads all parquet files under path from MinIO server.
     Raises InsufficientDataError if no files are present.
     """
 
     files = fs.glob(f"{path}/*.parquet")
-    # files = files[:3]
     logger.info(f"Found {len(files)} files at {path}")
 
     if not files:
         raise InsufficientDataError(f"No {name} files found: {path}")
+
+    if mode == "iterator":
+
+        def generator():
+            for file in files:
+                logger.info(f"Reading {file}")
+
+                df = pq.read_table(fs.open(file)).to_pandas()
+                yield df
+
+        return generator()
+
+    # in full mode for entire file
     dfs = [pq.read_table(fs.open(f)).to_pandas() for f in files]
     df = pd.concat(dfs, ignore_index=True)
+    logger.info(f"Concatenated dataframe rows in {name} file: {len(df)}")
     logger.info(f"Loaded {name} training data: total rows = {len(df)}")
     return df
+
+
+# for tesing purposes due to memory constraints.
+def sample_parquet(
+    path: str,
+    fs: s3fs.S3FileSystem,
+    sample_rows: int,
+):
+
+    files = fs.glob(f"{path}/*.parquet")
+
+    logger.info("Found %d parquet files at %s", len(files), path)
+
+    if not files:
+        raise InsufficientDataError(f"No parquet files found: {path}")
+
+    sampled_batches = []
+
+    for file in files:
+
+        logger.info("Processing parquet file: %s", file)
+
+        with fs.open(file, "rb") as f:
+
+            parquet = pq.ParquetFile(f)
+
+            logger.info("Row groups: %d", parquet.num_row_groups)
+
+            for rg in range(parquet.num_row_groups):
+
+                table = parquet.read_row_group(rg)
+
+                df = table.to_pandas()
+
+                n = min(sample_rows, len(df))
+
+                sampled_batches.append(df.sample(n=n, random_state=42))
+
+                del table
+                del df
+
+    result = pd.concat(sampled_batches, ignore_index=True)
+
+    return result
 
 
 def resolve_algorithm(
@@ -80,7 +139,11 @@ def fit_model(
 ) -> None:
     """Fit a model with best algorithm found durin HPO process"""
 
-    if X_test is not None:
-        model.fit(X_train, y_train, eval_set=[X_test, y_test], callbacks=[])
-    else:
+    if algorithm == "lgbm" and X_test is not None:
+        model.fit(X_train, y_train, eval_set=[(X_test, y_test)], callbacks=[])
+    elif algorithm == "xgboost" and X_test is not None:
+        model.fit(X_train, y_train, eval_set=[(X_test, y_test)], verbose=False)
+    elif y_train is not None:
         model.fit(X_train, y_train)
+    else:
+        model.fit(X_train)

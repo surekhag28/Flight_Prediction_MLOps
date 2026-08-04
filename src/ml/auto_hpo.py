@@ -135,7 +135,6 @@ def auto_tune_delay(
                 if not aucs:
                     return 0.0
                 mean_auc = float(np.mean(aucs))  # avg auc across folds for single trial
-                
 
                 with mlflow.start_run(nested=True, run_name=f"trial_{trial.number}"):
                     mlflow.log_params(
@@ -147,7 +146,6 @@ def auto_tune_delay(
                     mlflow.log_metric("cv_auc_roc", mean_auc)
                     mlflow.log_metric("trial_number", trial.number)
                     mlflow.set_tag("algorithm", algo_name)
-                    
 
                 return mean_auc
 
@@ -225,7 +223,7 @@ def _summarise_algo_trials(
 def run_delay_auto_hpo(pipeline_run_id: str, hpo_parent_run_id: str) -> dict:
     """Loads data from MinIO and runs multi-algorithm delay HPO, orchestrated by Airflow."""
 
-    from src.ml.training_utils import load_parquet_data, get_fs
+    from src.ml.training_utils import load_parquet_data, get_fs, sample_parquet
 
     setup_mlflow()
     fs = get_fs()
@@ -233,7 +231,8 @@ def run_delay_auto_hpo(pipeline_run_id: str, hpo_parent_run_id: str) -> dict:
     bucket = settings.miniosettings.bucket
 
     try:
-        df = load_parquet_data(f"{bucket}/gold/labels", fs, "delay label")
+        # df = load_parquet_data(f"{bucket}/gold/labels", fs, "delay label")
+        df = sample_parquet(f"{bucket}/gold/labels", fs, HPO_SAMPLE_ROWS)
     except (FileNotFoundError, OSError, InsufficientDataError) as e:
         logger.error(
             f"Auto HPO delay: no labelled data found, falling back to default lgbm config"

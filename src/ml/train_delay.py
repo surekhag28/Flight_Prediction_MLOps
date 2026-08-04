@@ -33,7 +33,12 @@ from sklearn.metrics import (
 from sklearn.model_selection import train_test_split
 from src.config.config import get_settings
 from src.ml.algorithms import CLASSIFIER_REGISTRY
-from src.ml.training_utils import get_fs, load_parquet_data, resolve_algorithm
+from src.ml.training_utils import (
+    get_fs,
+    load_parquet_data,
+    resolve_algorithm,
+    sample_parquet,
+)
 from src.utils.exceptions import InsufficientDataError, ModelTrainingError
 from src.core.logger import get_logger
 from src.utils.mlflow_utils import setup_mlflow, child_run
@@ -48,6 +53,7 @@ ARTIFACT_DIR = Path("/tmp/artifacts/delay")
 TRAIN_CFG = settings.training.delay
 MODEL_NAME = settings.mlflow.model_names.delay
 PIPELINE_EXP_NAME = settings.mlflow.experiments.delay
+SAMPLE_TRAIN_ROWS = settings.training.delay.sample_rows
 
 
 def run(
@@ -82,8 +88,24 @@ def run(
     fs = get_fs()
 
     try:
-        df = load_parquet_data(GOLD_LABELS_PATH, fs, "delay label")
-        logger.info(f"Delay risk data loaded from :{GOLD_LABELS_PATH}")
+        # df = load_parquet_data(GOLD_LABELS_PATH, fs, "delay label")
+        df = sample_parquet(GOLD_LABELS_PATH, fs, SAMPLE_TRAIN_ROWS)
+        # import pandas as pd
+
+        # with pd.option_context(
+        #     "display.max_columns",
+        #     None,
+        #     "display.width",
+        #     None,
+        #     "display.max_colwidth",
+        #     None,
+        # ):
+        #     logger.info("\n%s", df.head(3).to_string(index=False))
+        #     logger.info("\n%s", df["delay_risk"].value_counts())
+
+        # logger.info(
+        #     f"Delay risk data of {len(df)} rows loaded from :{GOLD_LABELS_PATH}"
+        # )
     except InsufficientDataError:
         logger.exception("Not enough data to train the model.")
         raise
@@ -109,7 +131,7 @@ def run(
     df = df[feature_cols + [target_col]].dropna()
 
     X = df[feature_cols].values
-    y = df[feature_cols].values
+    y = df[target_col].values
 
     logger.info(f"Total data points in delay label dataset: {len(df)}")
 
@@ -196,9 +218,11 @@ def run(
     except (InsufficientDataError, FileNotFoundError):
         raise
     except Exception as e:
-        raise ModelTrainingError(
-            f"Delay model training failed: pipeline_run_id: {pipeline_run_id}, algorithm: {algorithm}"
-        )
+        print(e)
+        raise
+        # raise ModelTrainingError(
+        #     f"Delay model training failed: pipeline_run_id: {pipeline_run_id}, algorithm: {algorithm}"
+        # )
     return {
         "pipeline_run_id": pipeline_run_id,
         "run_id": run_id,

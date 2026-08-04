@@ -135,7 +135,7 @@ def _finalise_run(**context):
     delay_run_id = ti.xcom_pull(task_ids="set_run_id", key="delay_parent_run_id")
 
     finish_run(delay_run_id)
-    logger.info(f"MLflow parent run finalised: delay run id: {delay_run_id}")
+    logger.info(f"MLflow parent run finalised:o")
 
 
 with DAG(
