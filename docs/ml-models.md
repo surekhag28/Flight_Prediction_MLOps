@@ -1,13 +1,13 @@
 # ML Models
 
 ## Overview
------------------------------------------------------------------
+
 The platform trains and serves three ML models, each solving different aviation prediction task. All models are tracked in MLflow, versioned in MLflow model registry, and include structured model card for tracking and governance.
 
--------------------------------------------
+
 
 ## Product A - Flight Delay Risk
--------------------------------------------
+
 
 ### Task
  
