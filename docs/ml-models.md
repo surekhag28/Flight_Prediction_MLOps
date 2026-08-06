@@ -1,12 +1,10 @@
 # ML Models
------------------------------------------------------------------
 
 ## Overview
 -----------------------------------------------------------------
 The platform trains and serves three ML models, each solving different aviation prediction task. All models are tracked in MLflow, versioned in MLflow model registry, and include structured model card for tracking and governance.
 
 -------------------------------------------
------------------------------------------
 
 ## Product A - Flight Delay Risk
 -------------------------------------------
@@ -40,8 +38,9 @@ Binary Label: 1= delayed, 0=not delayed. Labels are proxy-derived from trajector
 
 ### Training
 
-Source: src/ml/train_delay.py
+Source: `src/ml/train_delay.py`
 
+```
 CatBoost binary classifier
 ├── Data: gold/flights/ (up to HPO_SAMPLE_ROWS rows)
 ├── Split: 80/20 train/test, stratified by label
@@ -54,12 +53,13 @@ CatBoost binary classifier
 │   └── subsample: 0.5–1.0
 ├── Eval metric: AUC-ROC
 └── Quality gate: AUC-ROC > 0.65 (vs. current Production model)
+```
 
 ### Evaluation
 
-Source: src/ml/evaluate.py
+Source: `src/ml/evaluate.py`
 
-evaluate_delay() loads the challenger and the current production champion model. If the challenger's AUC_ROC on the test set beats the champion by any margin, the challenger model will be promoted to Staging. If no production models exists then challenger will be promoted unconditionally.
+`evaluate_delay()` loads the challenger and the current production champion model. If the challenger's AUC_ROC on the test set beats the champion by any margin, the challenger model will be promoted to Staging. If no production models exists then challenger will be promoted unconditionally.
 
 ### Output
 
@@ -70,4 +70,4 @@ evaluate_delay() loads the challenger and the current production champion model.
 | risk_label | LOW / MEDIUM / HIGH | Threshold-based label |
 | top_features | list[str] | Top-3 features by model importance |
 
-================================================
+--------------------
