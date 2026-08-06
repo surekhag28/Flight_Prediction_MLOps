@@ -215,6 +215,7 @@ def run(
                 mlflow.log_artifact(_tmpdir + "/model", artifact_path="model")
 
             run_id = run.info.run_id
+
     except (InsufficientDataError, FileNotFoundError):
         raise
     except Exception as e:
