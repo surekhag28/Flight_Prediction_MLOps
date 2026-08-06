@@ -185,26 +185,33 @@ def get_production_model_version(model_name: str) -> str | None:
 def promote_to_production(
     model_name: str, run_id: str, artifact_path: str = "model"
 ) -> str:
-    """Register a model from training run and promote it to production."""
+    """
+    Register a model from a training run and promote to production.
+    """
+
+    setup_mlflow()
     client = MlflowClient()
     try:
         model_uri = f"runs:/{run_id}/{artifact_path}"
-        result = mlflow.register_model(model_uri=model_uri, name=model_name)
+        result = mlflow.register_model(model_uri, name=model_name)
         version = result.version
-        logger.info(f"Registered model {model_name} with version {version}")
 
-        # archive existing production models first
-        versions = client.get_latest_versions(model_name, stages=["Production"])
-        for v in versions:
+        # Archive existing production versions first
+        for v in client.get_latest_versions(model_name, stages=["Production"]):
             client.transition_model_version_stage(
                 name=model_name, version=v.version, stage="Archived"
             )
-            logger.info(f"Archived {model_name} with version {v.version}")
+            logger.info(f"Archived model:{model_name} version: {version}")
 
         client.transition_model_version_stage(
             name=model_name, version=version, stage="Production"
         )
-        logger.info(f"Promoted model {model_name} with version {version} to production")
+        logger.info(
+            f"Promoted model:{model_name} with version: {version} to Production"
+        )
+
         return version
     except Exception as e:
-        raise MlflowError(f"Failed to promote model {model_name} to production") from e
+        raise MlflowError(
+            f"Failed to promoted model: {model_name} to Production"
+        ) from e

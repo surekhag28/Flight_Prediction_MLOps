@@ -68,11 +68,16 @@ def _set_run_id(**context):
     delay_parent_run_id = create_parent_run(
         settings.mlflow.experiments.delay, f"delay_{pipeline_run_id}", tags=_tags
     )  # for delay risk classifier
+    pipeline_parent_run_id = create_parent_run(
+        settings.mlflow.experiments.pipeline, f"pipeline_{pipeline_run_id}", tags=_tags
+    )
 
     ti = context["task_instance"]
     ti.xcom_push(key="delay_parent_run_id", value=delay_parent_run_id)
+    ti.xcom_push(key="pipeline_parent_run_id", value=pipeline_parent_run_id)
+
     logger.info(
-        f"Retrain dag started: pipeline_run_id:{pipeline_run_id}, trigger_reason: {trigger_reason}, delay_parent_run_id: {delay_parent_run_id}"
+        f"Retrain dag started: pipeline_run_id:{pipeline_run_id}, trigger_reason: {trigger_reason}, delay_parent_run_id: {delay_parent_run_id}, pipeline_parent_run_id: {pipeline_parent_run_id}"
     )
 
     return pipeline_run_id
@@ -122,10 +127,55 @@ def _train_delay(**context):
     best_params = ti.xcom_pull(task_ids="hpo_delay", key="delay_best_params")
     algorithm = ti.xcom_pull(task_ids="hpo_delay", key="delay_best_algorithm") or "lgbm"
     result = run(pipeline_run_id, parent_run_id, best_params, algorithm)
+    ti.xcom_push(key="delay_run_id", value=result["run_id"])
 
     logger.info(
         f"Delay model training completed: algorithm: {result['algorithm']}, auc_roc: {round(result['metrics'].get('auc_roc',0),3)}"
     )
+
+    return result
+
+
+def _evaluate_all(**context):
+    from dag_utils import get_pipeline_run_id
+    from src.ml.evaluate import evaluate_all
+
+    run_id = get_pipeline_run_id(**context)
+    ti = context["task_instance"]
+    eval_results = evaluate_all(
+        delay_run_id=ti.xcom_pull(task_ids="train_delay", key="delay_run_id"),
+        pipeline_parent_run_id=ti.xcom_pull(
+            task_ids="set_run_id", key="pipeline_parent_run_id"
+        ),
+        pipeline_run_id=run_id,
+    )
+
+    ti.xcom_push(key="eval_results", value=eval_results)
+    logger.info(f"Evaluation complete: eval_results={eval_results}")
+
+    return eval_results
+
+
+def _register_all(**context):
+    from dag_utils import get_pipeline_run_id
+    from src.ml.registry import register_all
+
+    run_id = get_pipeline_run_id(**context)
+    ti = context["task_instance"]
+    results = register_all(
+        delay_run_id=ti.xcom_pull(task_ids="train_delay", key="delay_run_id"),
+        eval_results=ti.xcom_pull(task_ids="evaluate_all", key="eval_results"),
+        pipeline_parent_run_id=ti.xcom_pull(
+            task_ids="set_run_id", key="pipeline_parent_run_id"
+        ),
+        pipeline_run_id=run_id,
+    )
+
+    promoted = [k for k, v in results.items() if v.promoted]  # promoted models
+    logger.info(f"Registry complete, models promoted={promoted}")
+    return {
+        k: {"promoted": v.promoted, "version": v.version} for k, v in results.items()
+    }
 
 
 def _finalise_run(**context):
@@ -156,8 +206,14 @@ with DAG(
 
     hpo_delay = PythonOperator(task_id="hpo_delay", python_callable=_hpo_delay)
     train_delay = PythonOperator(task_id="train_delay", python_callable=_train_delay)
+    evaluate_all_task = PythonOperator(
+        task_id="evaluate_all", python_callable=_evaluate_all
+    )
+    register_all_task = PythonOperator(
+        task_id="register_all", python_callable=_register_all
+    )
     finalise_run = PythonOperator(task_id="finalise_run", python_callable=_finalise_run)
 
     set_run_id >> create_labels >> hpo_delay
     hpo_delay >> train_delay
-    train_delay >> finalise_run
+    train_delay >> evaluate_all_task >> register_all_task >> finalise_run
