@@ -78,8 +78,37 @@ class DelayTrainingConfig(BaseModel):
     )
 
 
+class CongestionTrainingConfig(BaseModel):
+    target_column: str = "congestion_score"
+    feature_columns: list[str] = Field(
+        default_factory=lambda: [
+            "aircraft_count_50km",
+            "arrivals_last_30m",
+            "departures_last_30m",
+            "avg_altitude_50km",
+            "hour_of_day",
+            "day_of_week",
+        ]
+    )
+    max_rows: int = 200_000
+    sample_rows: int = 200_000
+    test_size: float = 0.15
+    random_state: int = 42
+    min_r2: float = 0.40  # for quality gate check
+    lgbm_params: dict[str, Any] = Field(
+        default_factory=lambda: {
+            "n_estimators": 300,
+            "learning_rate": 0.05,
+            "num_leaves": 31,
+        }
+    )
+
+
 class TrainingConfig(BaseModel):
     delay: DelayTrainingConfig = Field(default_factory=DelayTrainingConfig)
+    congestion: CongestionTrainingConfig = Field(
+        default_factory=CongestionTrainingConfig
+    )
 
 
 class MLflowExperimentsConfig(BaseModel):

@@ -106,12 +106,6 @@ def run(
         # logger.info(
         #     f"Delay risk data of {len(df)} rows loaded from :{GOLD_LABELS_PATH}"
         # )
-    except InsufficientDataError:
-        logger.exception("Not enough data to train the model.")
-        raise
-    except FileNotFoundError:
-        logger.exception(f"Unable to find file at location : {GOLD_LABELS_PATH}")
-        raise
     except Exception as e:
         raise ModelTrainingError(
             f"Failed to load data files from : {GOLD_LABELS_PATH}"
@@ -136,7 +130,11 @@ def run(
     logger.info(f"Total data points in delay label dataset: {len(df)}")
 
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, train_size=TRAIN_CFG.max_rows, stratify=y
+        X,
+        y,
+        train_size=TRAIN_CFG.max_rows,
+        stratify=y,
+        random_state=TRAIN_CFG.random_state,
     )
 
     logger.info(
@@ -195,7 +193,8 @@ def run(
             )
 
             feature_importances = spec.get_feature_importance(model, X_train)
-            if feature_importances:
+
+            if feature_importances is not None:
                 importance_dict = dict(zip(feature_cols, feature_importances.tolist()))
                 mlflow.log_dict(importance_dict, "feature_importance.json")
             else:

@@ -68,6 +68,11 @@ def _set_run_id(**context):
     delay_parent_run_id = create_parent_run(
         settings.mlflow.experiments.delay, f"delay_{pipeline_run_id}", tags=_tags
     )  # for delay risk classifier
+    congestion_parent_run_id = create_parent_run(
+        settings.mlflow.experiments.congestion,
+        f"congestion_{pipeline_run_id}",
+        tags=_tags,
+    )  # for congestion regressor
     pipeline_parent_run_id = create_parent_run(
         settings.mlflow.experiments.pipeline, f"pipeline_{pipeline_run_id}", tags=_tags
     )
@@ -75,9 +80,10 @@ def _set_run_id(**context):
     ti = context["task_instance"]
     ti.xcom_push(key="delay_parent_run_id", value=delay_parent_run_id)
     ti.xcom_push(key="pipeline_parent_run_id", value=pipeline_parent_run_id)
+    ti.xcom_push(key="congestion_parent_run_id", value=congestion_parent_run_id)
 
     logger.info(
-        f"Retrain dag started: pipeline_run_id:{pipeline_run_id}, trigger_reason: {trigger_reason}, delay_parent_run_id: {delay_parent_run_id}, pipeline_parent_run_id: {pipeline_parent_run_id}"
+        f"Retrain dag started: pipeline_run_id:{pipeline_run_id}, trigger_reason: {trigger_reason}, delay_parent_run_id: {delay_parent_run_id}, congestion_parent_run_id: {congestion_parent_run_id},pipeline_parent_run_id: {pipeline_parent_run_id}"
     )
 
     return pipeline_run_id
@@ -117,6 +123,24 @@ def _hpo_delay(**context):
     return result
 
 
+def _hpo_congestion(**context):
+    from src.ml.auto_hpo import run_congestion_auto_hpo
+
+    pipeline_run_id = get_pipeline_run_id(**context)
+    ti = context["task_instance"]
+
+    hpo_parent_id = ti.xcom_pull(task_ids="set_run_id", key="congestion_parent_run_id")
+    result = run_congestion_auto_hpo(pipeline_run_id, hpo_parent_id)
+    ti.xcom_push(key="congestion_best_params", value=result["params"])
+    ti.xcom_push(key="congestion_best_algorithm", value=result.get("algorithm", "lgbm"))
+
+    logger.info(
+        f"Auto HPO congestion complete: best algorithm: {result.get('algorithm')}, best_r2: {result.get('best_r2')}"
+    )
+
+    return result
+
+
 def _train_delay(**context):
 
     from src.ml.train_delay import run
@@ -136,6 +160,25 @@ def _train_delay(**context):
     return result
 
 
+def _train_congestion(**context):
+    from src.ml.train_congestion import run
+
+    pipeline_run_id = get_pipeline_run_id(**context)
+    ti = context["task_instance"]
+
+    parent_run_id = ti.xcom_pull(task_ids="set_run_id", key="congestion_parent_run_id")
+    best_params = ti.xcom_pull(task_ids="hpo_congestion", key="congestion_best_params")
+    algorithm = ti.xcom_pull(task_ids="hpo_congestion", key="congestion_best_algorithm")
+    result = run(pipeline_run_id, parent_run_id, best_params, algorithm)
+    ti.xcom_push(key="congestion_run_id", value=result["run_id"])
+
+    logger.info(
+        f"Congestion model training completed: algorithm={result['algorithm']}, metrics={result['metrics']}"
+    )
+
+    return result
+
+
 def _evaluate_all(**context):
     from dag_utils import get_pipeline_run_id
     from src.ml.evaluate import evaluate_all
@@ -144,6 +187,9 @@ def _evaluate_all(**context):
     ti = context["task_instance"]
     eval_results = evaluate_all(
         delay_run_id=ti.xcom_pull(task_ids="train_delay", key="delay_run_id"),
+        congestion_run_id=ti.xcom_pull(
+            task_ids="train_congestion", key="congestion_run_id"
+        ),
         pipeline_parent_run_id=ti.xcom_pull(
             task_ids="set_run_id", key="pipeline_parent_run_id"
         ),
@@ -164,6 +210,9 @@ def _register_all(**context):
     ti = context["task_instance"]
     results = register_all(
         delay_run_id=ti.xcom_pull(task_ids="train_delay", key="delay_run_id"),
+        congestion_run_id=ti.xcom_pull(
+            task_ids="train_congestion", key="congestion_run_id"
+        ),
         eval_results=ti.xcom_pull(task_ids="evaluate_all", key="eval_results"),
         pipeline_parent_run_id=ti.xcom_pull(
             task_ids="set_run_id", key="pipeline_parent_run_id"
@@ -183,9 +232,20 @@ def _finalise_run(**context):
 
     ti = context["task_instance"]
     delay_run_id = ti.xcom_pull(task_ids="set_run_id", key="delay_parent_run_id")
+    congestion_run_id = ti.xcom_pull(
+        task_ids="set_run_id", key="congestion_parent_run_id"
+    )
 
-    finish_run(delay_run_id)
-    logger.info(f"MLflow parent run finalised:o")
+    for key in (
+        "delay_parent_run_id",
+        "congestion_parent_run_id",
+        "pipeline_parent_run_id",
+    ):
+        run_id = ti.xcom_pull(task_ids="set_run_id", key=key)
+        if run_id:
+            finish_run(run_id)
+
+        logger.info(f"MLflow parent run finalised: key = {key}, run_id={run_id}")
 
 
 with DAG(
@@ -205,7 +265,13 @@ with DAG(
     )
 
     hpo_delay = PythonOperator(task_id="hpo_delay", python_callable=_hpo_delay)
+    hpo_congestion = PythonOperator(
+        task_id="hpo_congestion", python_callable=_hpo_congestion
+    )
     train_delay = PythonOperator(task_id="train_delay", python_callable=_train_delay)
+    train_congestion = PythonOperator(
+        task_id="train_congestion", python_callable=_train_congestion
+    )
     evaluate_all_task = PythonOperator(
         task_id="evaluate_all", python_callable=_evaluate_all
     )
@@ -214,6 +280,9 @@ with DAG(
     )
     finalise_run = PythonOperator(task_id="finalise_run", python_callable=_finalise_run)
 
-    set_run_id >> create_labels >> hpo_delay
+    set_run_id >> create_labels >> [hpo_delay, hpo_congestion]
     hpo_delay >> train_delay
-    train_delay >> evaluate_all_task >> register_all_task >> finalise_run
+    hpo_congestion >> train_congestion
+
+    [train_delay, train_congestion] >> evaluate_all_task
+    evaluate_all_task >> register_all_task >> finalise_run

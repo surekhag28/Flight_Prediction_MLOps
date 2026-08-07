@@ -64,8 +64,37 @@ def evaluate_delay(candidate_run_id: str):
     return better
 
 
+def evaluate_congestion(candidate_run_id: str) -> bool:
+    """Compare congestion regressor - use R2 score. Returns True to promote"""
+
+    cfg = settings.training.congestion
+    candidate_metrics = _get_run_metrics(candidate_run_id)
+    candidate_r2 = candidate_metrics.get("r2", -999.0)
+
+    if candidate_r2 < cfg.min_r2:
+        logger.warning(
+            f"Congestion candidate failed quality check: candidate_r2={candidate_r2}, min_r2={cfg.min_r2}"
+        )
+        return False
+
+    prod_run_id = _get_production_run_id(settings.mlflow.model_names.congestion)
+    if prod_run_id is None:
+        return True
+
+    prod_r2 = _get_run_metrics(prod_run_id).get("r2", -999.0)
+    better = candidate_r2 > prod_r2
+    logger.info(
+        f"Congestion eval: candidate_r2={round(candidate_r2,2)}, prod_r2={round(prod_r2,2)}, decision='PROMOTE' if {better} else 'KEEP'"
+    )
+
+    return better
+
+
 def evaluate_all(
-    delay_run_id: str, pipeline_parent_run_id: str, pipeline_run_id: str
+    delay_run_id: str,
+    congestion_run_id: str,
+    pipeline_parent_run_id: str,
+    pipeline_run_id: str,
 ) -> dict[str, bool]:
     """Evaluate candidate models under one 'evaluation' child run.
 
@@ -81,26 +110,35 @@ def evaluate_all(
         tags={"pipeline_run_id": pipeline_run_id},
     ) as run:
         delay_promote = evaluate_delay(delay_run_id)
+        congestion_promote = evaluate_congestion(congestion_run_id)
 
-        results = {"delay": delay_promote}
+        results = {"delay": delay_promote, "congestion": congestion_promote}
 
         delay_metrics = _get_run_metrics(delay_run_id)
+        congestion_metrics = _get_run_metrics(congestion_run_id)
 
         mlflow.log_metrics(
             {
                 "delay_candidate_auc": delay_metrics.get("auc_roc", 0.0),
                 "delay_candidate_f1": delay_metrics.get("f1", 0.0),
+                "congestion_candidate_r2": congestion_metrics.get("r2", -999.0),
+                "congestion_candidate_rmse": congestion_metrics.get("rmse", -999.0),
             }
         )
 
         mlflow.log_params(
-            {"delay_promote": str(delay_promote), "delay_run_id": delay_run_id}
+            {
+                "delay_promote": str(delay_promote),
+                "congestion_promote": congestion_promote,
+                "delay_run_id": delay_run_id,
+                "congestion_run_id": congestion_run_id,
+            }
         )
 
         mlflow.log_dict(results, "promotion_decision.json")
 
         logger.info(
-            f"Evaluation complete, evaluation_run_id: {run.info.run_id}, delay={delay_promote}"
+            f"Evaluation complete, evaluation_run_id: {run.info.run_id}, delay={delay_promote}, congestion={congestion_promote}"
         )
 
     return results

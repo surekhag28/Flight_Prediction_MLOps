@@ -71,3 +71,63 @@ Source: `src/ml/evaluate.py`
 | top_features | list[str] | Top-3 features by model importance |
 
 --------------------
+
+## Product B: Airspace Congestion Regressor
+
+
+### Task
+ 
+Regression : Predicts a congestion score (0-1) for an airport.
+
+### Model
+
+Best model is identified through hyperparameter tuning and used further for training the final regressor.
+
+### Features
+
+| Feature | Source | Description |
+|------|-----|------|
+| aircraft_count_50km | Request/Feast | Aircraft density within 50 km radius |
+| arrivals_last_30m | Request/Feast | Arrivals in last 30 minutes |
+| departures_last_30m | Request/Feast | Departures in last 30 minutes |
+| avg_altitude_50km | Request/Feast | Average altitude of nearby aircraft |
+| hour_of_day | Request/Computed | UTC hour of day |
+| day_of_week | Request/Computed | Day of week (0=Monday) |
+
+
+### Target
+
+Continuous congestion score [0-1] computed as a normalised ratio of current traffic volume relative to the estimated airport capacity.
+Derived in `src/processong/silver_to_gold_congestion.py`
+
+### Training
+
+Source: `src/ml/train_congestion.py`
+
+```
+RandomForest regressor
+├── Data: gold/congestion/
+├── Split: 80/20 train/test
+├── HPO: Optuna, 30 trials
+│   ├── num_leaves, learning_rate, n_estimators, max_depth, 
+│   ├── min_samples_split, min_samples_leaf,max_features
+├── Eval metric: RMSE
+└── Quality gate: RMSE < current Production RMSE
+```
+
+### Evaluation
+
+Source: `src/ml/evaluate.py`
+
+`evaluate_congestion()` loads the challenger and the current production champion model. If the challenger's R2 score on the test set beats the champion by any margin, the challenger model will be promoted to Staging. If no production models exists then challenger will be promoted unconditionally.
+
+### Output
+
+
+| Field | Type | Description |
+|------|-----|------|
+| congestion_score | float 0-1 | Congestion Level(0=clear, 1=gridblocked) |
+| congestion_level | LOW / MEDIUM / HIGH / CRITICAL | Threshold-based label |
+
+--------------------
+
