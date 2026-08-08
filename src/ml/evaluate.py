@@ -90,9 +90,16 @@ def evaluate_congestion(candidate_run_id: str) -> bool:
     return better
 
 
+def evaluate_anomaly(candidate_run_id: str) -> bool:
+    """Anomaly detector: always promote (unsupervised, no quality gate)"""
+    logger.info(f"Anomaly model: always promoting to Production.")
+    return True
+
+
 def evaluate_all(
     delay_run_id: str,
     congestion_run_id: str,
+    anomaly_run_id: str,
     pipeline_parent_run_id: str,
     pipeline_run_id: str,
 ) -> dict[str, bool]:
@@ -111,11 +118,17 @@ def evaluate_all(
     ) as run:
         delay_promote = evaluate_delay(delay_run_id)
         congestion_promote = evaluate_congestion(congestion_run_id)
+        anomaly_promote = evaluate_anomaly(anomaly_run_id)
 
-        results = {"delay": delay_promote, "congestion": congestion_promote}
+        results = {
+            "delay": delay_promote,
+            "congestion": congestion_promote,
+            "anomaly": anomaly_promote,
+        }
 
         delay_metrics = _get_run_metrics(delay_run_id)
         congestion_metrics = _get_run_metrics(congestion_run_id)
+        anomaly_metrics = _get_run_metrics(anomaly_run_id)
 
         mlflow.log_metrics(
             {
@@ -123,6 +136,7 @@ def evaluate_all(
                 "delay_candidate_f1": delay_metrics.get("f1", 0.0),
                 "congestion_candidate_r2": congestion_metrics.get("r2", -999.0),
                 "congestion_candidate_rmse": congestion_metrics.get("rmse", -999.0),
+                "anomaly_anomaly_rate": anomaly_metrics.get("anomaly_rate", 0.0),
             }
         )
 
@@ -130,15 +144,17 @@ def evaluate_all(
             {
                 "delay_promote": str(delay_promote),
                 "congestion_promote": congestion_promote,
+                "anomaly_promote": anomaly_promote,
                 "delay_run_id": delay_run_id,
                 "congestion_run_id": congestion_run_id,
+                "anonmaly_run_id": anomaly_run_id,
             }
         )
 
         mlflow.log_dict(results, "promotion_decision.json")
 
         logger.info(
-            f"Evaluation complete, evaluation_run_id: {run.info.run_id}, delay={delay_promote}, congestion={congestion_promote}"
+            f"Evaluation complete, evaluation_run_id: {run.info.run_id}, delay={delay_promote}, congestion={congestion_promote}, anomaly={anomaly_promote}"
         )
 
     return results

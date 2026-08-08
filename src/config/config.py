@@ -104,11 +104,29 @@ class CongestionTrainingConfig(BaseModel):
     )
 
 
+class AnomalyTrainingConfig(BaseModel):
+    feature_columns: list[str] = Field(
+        default_factory=lambda: [
+            "heading_change_5m",
+            "speed_ms",
+            "altitude_m",
+            "vertical_rate_ms",
+            "distance_10_km",
+        ]
+    )
+
+    sample_rows: int = 50000
+    contamination: float = 0.05
+    n_estimators: float = 200
+    random_state: int = 42
+
+
 class TrainingConfig(BaseModel):
     delay: DelayTrainingConfig = Field(default_factory=DelayTrainingConfig)
     congestion: CongestionTrainingConfig = Field(
         default_factory=CongestionTrainingConfig
     )
+    anomaly: AnomalyTrainingConfig = Field(default_factory=AnomalyTrainingConfig)
 
 
 class MLflowExperimentsConfig(BaseModel):

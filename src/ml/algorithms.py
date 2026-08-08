@@ -343,6 +343,67 @@ REGRESSOR_REGISTRY: dict[str, AlgorithmSpec] = {
     ),
 }
 
+
+# Anomaly detection algorithms
+
+
+def _isolation_forest_factory(params: dict, random_state: int) -> Any:
+    from sklearn.ensemble import IsolationForest
+
+    return IsolationForest(**params, random_state=random_state, n_jobs=-1)
+
+
+def _isolation_forest_space(trial: optuna.Trial, prefix: str) -> dict:
+    p = f"{prefix}_"
+    return {
+        "n_estimators": trial.suggest_int(f"{p}n_estimators", 50, 400),
+        "max_samples": trial.suggest_categorical(
+            f"{p}max_samples", ["auto", 128, 256, 512]
+        ),
+        "contamination": trial.suggest_float(f"{p}contamination", 0.01, 0.15),
+        "max_features": trial.suggest_float(f"{p}max_features", 0.5, 1.0),
+        "bootstrap": trial.suggest_categorical(f"{p}bootstrap", [True, False]),
+    }
+
+
+def _lof_factory(params: dict, random_state: int) -> Any:
+    from sklearn.neighbors import LocalOutlierFactor
+
+    return LocalOutlierFactor(**params, novelty=True, n_jobs=-1)
+
+
+def _lof_space(trial: optuna.Trial, prefix: str) -> dict:
+    p = f"{prefix}_"
+    return {
+        "n_neighbors": trial.suggest_int(f"{p}n_neighbors", 5, 50),
+        "leaf_size": trial.suggest_int(f"{p}leaf_size", 10, 60),
+        "contamination": trial.suggest_float(f"{p}contamination", 0.01, 0.15),
+        "metric": trial.suggest_categorical(
+            f"{p}metric", ["euclidean", "manhattan", "minkowski"]
+        ),
+    }
+
+
+ANOMALY_REGISTRY: dict[str, AlgorithmSpec] = {
+    "isolation_forest": AlgorithmSpec(
+        name="isolation_forest",
+        factory=_isolation_forest_factory,
+        search_space=_isolation_forest_space,
+        get_feature_importance=_no_feature_importance,
+        supports_feature_importance_flag=False,
+        algorithm_type="anomaly",
+    ),
+    "lof": AlgorithmSpec(
+        name="lof",
+        factory=_lof_factory,
+        search_space=_lof_space,
+        get_feature_importance=_no_feature_importance,
+        supports_feature_importance_flag=False,
+        algorithm_type="anomaly",
+    ),
+}
+
+
 # default algorithms
 
 
@@ -354,3 +415,7 @@ def get_classifier_algorithms() -> list[str]:
 def get_regressor_algorithms() -> list[str]:
     """Returns deafult algorithm names to compete in regressor HPO"""
     return ["lgbm", "xgboost", "catboost", "random_forest", "hgb"]
+
+
+def get_anomaly_algorithms() -> list[str]:
+    return ["isolation_forest", "lof"]

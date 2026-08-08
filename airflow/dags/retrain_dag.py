@@ -73,6 +73,12 @@ def _set_run_id(**context):
         f"congestion_{pipeline_run_id}",
         tags=_tags,
     )  # for congestion regressor
+    anomaly_parent_run_id = create_parent_run(
+        settings.mlflow.experiments.anomaly,
+        f"anomaly_{pipeline_run_id}",
+        tags=_tags,
+    )  # for anomaly detection
+
     pipeline_parent_run_id = create_parent_run(
         settings.mlflow.experiments.pipeline, f"pipeline_{pipeline_run_id}", tags=_tags
     )
@@ -81,9 +87,10 @@ def _set_run_id(**context):
     ti.xcom_push(key="delay_parent_run_id", value=delay_parent_run_id)
     ti.xcom_push(key="pipeline_parent_run_id", value=pipeline_parent_run_id)
     ti.xcom_push(key="congestion_parent_run_id", value=congestion_parent_run_id)
+    ti.xcom_push(key="anomaly_parent_run_id", value=anomaly_parent_run_id)
 
     logger.info(
-        f"Retrain dag started: pipeline_run_id:{pipeline_run_id}, trigger_reason: {trigger_reason}, delay_parent_run_id: {delay_parent_run_id}, congestion_parent_run_id: {congestion_parent_run_id},pipeline_parent_run_id: {pipeline_parent_run_id}"
+        f"Retrain dag started: pipeline_run_id:{pipeline_run_id}, trigger_reason: {trigger_reason}, delay_parent_run_id: {delay_parent_run_id}, congestion_parent_run_id: {congestion_parent_run_id},anomaly_parent_run_id: {anomaly_parent_run_id}, pipeline_parent_run_id: {pipeline_parent_run_id}"
     )
 
     return pipeline_run_id
@@ -141,6 +148,24 @@ def _hpo_congestion(**context):
     return result
 
 
+def _hpo_anomaly(**context):
+    from src.ml.auto_hpo import run_anomaly_auto
+
+    pipeline_run_id = get_pipeline_run_id(**context)
+    ti = context["task_instance"]
+
+    hpo_parent_id = ti.xcom_pull(task_ids="set_run_id", key="anomaly_parent_run_id")
+    result = run_anomaly_auto(pipeline_run_id, hpo_parent_id)
+    ti.xcom_push(key="anomaly_best_params", value=result["params"])
+    ti.xcom_push(
+        key="anomaly_best_algorithm", value=result.get("algorithm", "isolation_forest")
+    )
+
+    logger.info(
+        f"Auto HPO anomaly detection completed: best_algorithm={result.get('algorithm')}, best_score={result.get('best_score')}"
+    )
+
+
 def _train_delay(**context):
 
     from src.ml.train_delay import run
@@ -179,6 +204,25 @@ def _train_congestion(**context):
     return result
 
 
+def _train_anomaly(**context):
+    from src.ml.train_anomaly import run
+
+    pipeline_run_id = get_pipeline_run_id(**context)
+    ti = context["task_instance"]
+
+    parent_run_id = ti.xcom_pull(task_ids="set_run_id", key="anomaly_parent_run_id")
+    best_params = ti.xcom_pull(task_ids="hpo_anomaly", key="anomaly_best_params")
+    algorithm = ti.xcom_pull(task_ids="hpo_anomaly", key="anomaly_best_algorithm")
+    result = run(pipeline_run_id, parent_run_id, best_params, algorithm)
+    ti.xcom_push(key="anomaly_run_id", value=result["run_id"])
+
+    logger.info(
+        f"Anomaly detection training completed: algorithm={result['algorithm']}, metrics={result['metrics']}"
+    )
+
+    return result
+
+
 def _evaluate_all(**context):
     from dag_utils import get_pipeline_run_id
     from src.ml.evaluate import evaluate_all
@@ -190,6 +234,7 @@ def _evaluate_all(**context):
         congestion_run_id=ti.xcom_pull(
             task_ids="train_congestion", key="congestion_run_id"
         ),
+        anomaly_run_id=ti.xcom_pull(task_ids="train_anomaly", key="anomaly_run_id"),
         pipeline_parent_run_id=ti.xcom_pull(
             task_ids="set_run_id", key="pipeline_parent_run_id"
         ),
@@ -213,6 +258,7 @@ def _register_all(**context):
         congestion_run_id=ti.xcom_pull(
             task_ids="train_congestion", key="congestion_run_id"
         ),
+        anomaly_run_id=ti.xcom_pull(task_ids="train_anomaly", key="anomaly_run_id"),
         eval_results=ti.xcom_pull(task_ids="evaluate_all", key="eval_results"),
         pipeline_parent_run_id=ti.xcom_pull(
             task_ids="set_run_id", key="pipeline_parent_run_id"
@@ -231,14 +277,10 @@ def _finalise_run(**context):
     from src.utils.mlflow_utils import finish_run
 
     ti = context["task_instance"]
-    delay_run_id = ti.xcom_pull(task_ids="set_run_id", key="delay_parent_run_id")
-    congestion_run_id = ti.xcom_pull(
-        task_ids="set_run_id", key="congestion_parent_run_id"
-    )
-
     for key in (
         "delay_parent_run_id",
         "congestion_parent_run_id",
+        "anomaly_parent_run_id",
         "pipeline_parent_run_id",
     ):
         run_id = ti.xcom_pull(task_ids="set_run_id", key=key)
@@ -268,10 +310,16 @@ with DAG(
     hpo_congestion = PythonOperator(
         task_id="hpo_congestion", python_callable=_hpo_congestion
     )
+    hpo_anomaly = PythonOperator(task_id="hpo_anomaly", python_callable=_hpo_anomaly)
+
     train_delay = PythonOperator(task_id="train_delay", python_callable=_train_delay)
     train_congestion = PythonOperator(
         task_id="train_congestion", python_callable=_train_congestion
     )
+    train_anomaly = PythonOperator(
+        task_id="train_anomaly", python_callable=_train_anomaly
+    )
+
     evaluate_all_task = PythonOperator(
         task_id="evaluate_all", python_callable=_evaluate_all
     )
@@ -280,9 +328,10 @@ with DAG(
     )
     finalise_run = PythonOperator(task_id="finalise_run", python_callable=_finalise_run)
 
-    set_run_id >> create_labels >> [hpo_delay, hpo_congestion]
+    set_run_id >> create_labels >> [hpo_delay, hpo_congestion, hpo_anomaly]
     hpo_delay >> train_delay
     hpo_congestion >> train_congestion
+    hpo_anomaly >> train_anomaly
 
-    [train_delay, train_congestion] >> evaluate_all_task
+    [train_delay, train_congestion, train_anomaly] >> evaluate_all_task
     evaluate_all_task >> register_all_task >> finalise_run

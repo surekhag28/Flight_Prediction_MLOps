@@ -50,9 +50,23 @@ def register_congestion_if_better(
     )
 
 
+def register_anomaly_if_better(run_id: str, should_promote: bool) -> RegistrationResult:
+
+    model_name = settings.mlflow.model_names.anomaly
+    if should_promote:
+        version = promote_to_production(
+            model_name, run_id, artifact_path="sklearn-pipeline"
+        )
+        logger.info(f"Anomaly model promoted to Production with version={version}")
+        return RegistrationResult(model_name, run_id, should_promote, version)
+
+    return RegistrationResult(model_name, run_id, False, None)
+
+
 def register_all(
     delay_run_id: str,
     congestion_run_id: str,
+    anomaly_run_id: str,
     eval_results: dict[str, bool],
     pipeline_parent_run_id: str,
     pipeline_run_id: str,
@@ -63,12 +77,13 @@ def register_all(
     Args:
         delay_run_id:str            Mlflow run ID of the delay training child run
         congestion_run_id:str       Mlflow run ID of the congestion regressor child run
+        anomaly_run_id:str          Mlflow run ID of the anomaly detector child run
         eval_results:dict           {model_key: should_promote} from evaluate_all
         pipeline_parent_run_id      Mlflow run ID of the pipeline parent run
         pipeline_run_id             Shared DAG timestamp string
 
     Returns:
-        {"delay":RegistrationResult, "congestion":RegistrationResult}
+        {"delay":RegistrationResult, "congestion":RegistrationResult, "anomaly":RegistraionResult}
     """
 
     setup_mlflow()
@@ -87,21 +102,38 @@ def register_all(
             congestion_run_id, eval_results.get("congestion", False)
         )
 
+        anomaly_result = register_anomaly_if_better(
+            anomaly_run_id, eval_results.get("anomaly", False)
+        )
+
         mlflow.log_params(
             {
                 "delay_promoted": delay_result.promoted,
                 "delay_version": delay_result.version,
                 "congestion_promoted": congestion_result.promoted,
                 "congestion_version": congestion_result.version,
+                "anomaly_promoted": anomaly_result.promoted,
+                "anomaly_version": anomaly_result.version,
             }
         )
 
         mlflow.log_metric(
-            "models_promoted", sum([delay_result.promoted, congestion_result.promoted])
+            "models_promoted",
+            sum(
+                [
+                    delay_result.promoted,
+                    congestion_result.promoted,
+                    anomaly_result.promoted,
+                ]
+            ),
         )
 
         logger.info(
-            f"Registration completed, registry_run_id:{run.info.run_id}, delay_promoted:{delay_result.promoted}, congestion_promoted: {congestion_result.promoted}"
+            f"Registration completed, registry_run_id:{run.info.run_id}, delay_promoted:{delay_result.promoted}, congestion_promoted: {congestion_result.promoted}, anomaly_promoted: {anomaly_result.promoted}"
         )
 
-    return {"delay": delay_result, "congestion": congestion_result}
+    return {
+        "delay": delay_result,
+        "congestion": congestion_result,
+        "anomaly": anomaly_result,
+    }

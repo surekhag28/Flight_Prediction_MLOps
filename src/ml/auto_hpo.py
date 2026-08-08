@@ -38,8 +38,10 @@ from src.config.config import get_settings
 from src.ml.algorithms import (
     CLASSIFIER_REGISTRY,
     REGRESSOR_REGISTRY,
+    ANOMALY_REGISTRY,
     get_classifier_algorithms,
     get_regressor_algorithms,
+    get_anomaly_algorithms,
 )
 from src.core.logger import get_logger
 from src.utils.mlflow_utils import child_run, setup_mlflow
@@ -318,6 +320,115 @@ def auto_tune_congestion(
         ) from e
 
 
+def auto_tune_anomaly(
+    X_scaled: np.ndarray,
+    pipeline_run_id: str,
+    hpo_parent_run_id: str,
+    n_trials: int = N_TRIALS,
+    sample_rows: int = HPO_SAMPLE_ROWS,
+    algorithm: list[str] | None = None,
+) -> dict[str, Any]:
+    """Multi-algorithm HPO for anomaly detection.
+
+    Objhective: Maximise score spread (higher std = better anomaly separation.)
+
+    Returns:
+
+    {"algorithm":str, "params":dict, "best_score":float, "hpo_run_id":str}
+    """
+
+    algorithms = get_anomaly_algorithms()
+
+    if len(X_scaled) > sample_rows:
+        idx = np.random.default_rng(42).choice(
+            len(X_scaled), sample_rows, replace=False
+        )
+        X_s = X_scaled[idx]
+    else:
+        X_s = X_scaled
+
+    logger.info(
+        f"Auto HPO anomaly started: samples={len(X_scaled)}, trials={n_trials}, algorithms={algorithms}"
+    )
+
+    try:
+        with child_run(
+            hpo_parent_run_id,
+            "anomaly_auto",
+            ANOMALY_EXP,
+            tags={
+                "model_type": "anomaly_detector",
+                "pipeline_run_id": pipeline_run_id,
+                "hpo_mode": "multi-algorithm",
+                "algorithms": ",".join(algorithms),
+            },
+        ) as run:
+
+            hpo_run_id = run.info.run_id
+
+            def objective(trial: optuna.Trial):
+                algo_name = trial.suggest_categorical("algorithm", algorithms)
+                spec = ANOMALY_REGISTRY[algo_name]
+                params = spec.search_space(trial, algo_name)
+                model = spec.factory(params, RANDOM_STATE)
+                model.fit(X_s)
+                scores = model.decision_function(X_s)
+                score_spread = float(np.std(scores))
+                anomaly_rate = float((model.predict(X_s) == -1).mean())
+
+                with mlflow.start_run(nested=True, run_name=f"trial_{trial.number}"):
+                    mlflow.log_params(
+                        {
+                            "algorithm": algo_name,
+                            **{k: str(v) for k, v in params.items()},
+                        }
+                    )
+                    mlflow.log_metric("score_spread", score_spread)
+                    mlflow.log_metric("mean_score", float(np.mean(scores)))
+                    mlflow.log_metric("anomaly_rate", anomaly_rate)
+                    mlflow.log_metric("trial_number", trial.number)
+                    mlflow.set_tag("algorithm", algo_name)
+
+                return score_spread
+
+            sampler = optuna.samplers.TPESampler(seed=RANDOM_STATE)
+            pruner = optuna.pruners.MedianPruner(n_startup_trials=3, n_warmup_steps=1)
+            study = optuna.create_study(
+                direction="maximize", sampler=sampler, pruner=pruner
+            )
+            study.optimize(objective, n_trials=N_TRIALS, show_progress_bar=False)
+
+            best_trial = study.best_trial
+            best_algo = best_trial.params["algorithm"]
+            best_params = {
+                k.removeprefix(f"{best_algo}_"): v
+                for k, v in best_trial.params.items()
+                if k != "algorithm"
+            }
+            best_score = study.best_value
+
+            mlflow.log_params({f"best_{k}": str(v) for k, v in best_params.items()})
+            mlflow.log_metric("best_score_spread", best_score)
+            mlflow.log_metric("n_trials_completed", len(study.trials))
+            mlflow.set_tag("champion_algorithm", best_algo)
+
+            logger.info(
+                f"Auto HPO anomaly completed: champion algo={best_algo}, best_score_sprea={round(best_score,4)}"
+            )
+
+            return {
+                "algorithm": best_algo,
+                "params": best_params,
+                "best_score": best_score,
+                "hpo_run_id": hpo_run_id,
+            }
+
+    except Exception as e:
+        raise HPOError(
+            f"Auto HPO anomaly failed with run id: {hpo_parent_run_id}"
+        ) from e
+
+
 def _summarise_algo_trials(
     study: optuna.Study,
     algorithms: list[str],
@@ -417,6 +528,51 @@ def run_congestion_auto_hpo(pipeline_run_id: str, hpo_parent_run_id: str) -> dic
     y = df[cfg.target_column].values
 
     return auto_tune_congestion(X, y, feature_cols, pipeline_run_id, hpo_parent_run_id)
+
+
+def run_anomaly_auto(pipeline_run_id: str, hpo_parent_run_id: str) -> dict:
+    """Loads data from MinIO and runs Multi-algorithm HPO, orchestrated by airflow"""
+
+    import pandas as pd
+    from src.ml.training_utils import get_fs, sample_parquet, load_parquet_data
+
+    setup_mlflow()
+    fs = get_fs()
+    cfg = settings.training.anomaly
+    bucket = settings.miniosettings.bucket
+
+    try:
+        df = load_parquet_data(
+            f"{bucket}/gold/flight_state_features", fs, "gold flight"
+        )
+    except (FileNotFoundError, OSError, InsufficientDataError) as e:
+        logger.info(f"Auto HPO anomaly: no data, falling back to default")
+        return {
+            "algorithm": "isolation_forest",
+            "params": {
+                "n_estimators": cfg.n_estimators,
+                "contamination": cfg.contamination,
+            },
+            "skipped": True,
+        }
+
+    feature_cols = [c for c in cfg.feature_columns if c in df.columns]
+    df = df[feature_cols].dropna()
+
+    if len(df) < settings.hpo.min_sample_rows_anomaly:
+        logger.warning(f"Auto HPO anomaly: insufficient data: {len(df)} rows")
+        return {
+            "algorithm": "isolation_forest",
+            "params": {
+                "n_estimators": cfg.n_estimators,
+                "contamination": cfg.contamination,
+            },
+            "skipped": True,
+        }
+
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(df[feature_cols].values)
+    return auto_tune_anomaly(X_scaled, pipeline_run_id, hpo_parent_run_id)
 
 
 if __name__ == "__main__":
