@@ -131,3 +131,124 @@ Source: `src/ml/evaluate.py`
 
 --------------------
 
+## Product C - Flight Anomaly Detection
+
+
+### Task
+ 
+Unsupervised anomaly detection: flag flights with unusual trajectory or speed patterns.
+
+### Model
+
+Best model is identified through hyperparameter tuning and used further for training the model.
+
+### Features
+
+| Feature | Source | Description |
+|------|-----|------|
+| speed_ms | Request/Feast | Ground speed in m/s |
+| altitude_m | Request/Feast | Barometric altitude in meters |
+| vertical_rate_ms | Request/Feast | Climb/descent rate in m/s |
+| heading_change_5m | Request/Feast | Heading change over 5 minutes (degrees) |
+| distance_10m_km | Request/Feast | Distance travelled in last 10 minutes |
+
+### Training
+
+Source: `src/ml/train_anomaly.py`
+
+```
+Isolation Forest
+├── Data: gold/flights/ (normal flights only, filtered by heuristics)
+├── No split required (unsupervised)
+├── Preprocessing: StandardScaler (fitted on training data, saved with model)
+├── HPO: Optuna, 30 trials
+│   ├── n_estimators: 50–500
+│   ├── max_samples: 0.5–1.0
+│   └── contamination: 0.01–0.1
+├── Eval metric: Silhouette score / proportion flagged
+└── Quality gate: always promotes (no baseline for unsupervised models)
+```
+
+The preprocessing pipeline (StandardScaler + IsolationForest) is wrapped in Sklearn Pipeline object so that the scaler is applied
+automatically at inference time.
+
+### Output
+
+
+| Field | Type | Description |
+|------|-----|------|
+| anomaly_score | float (negative = more anomalous) | Raw `decision_function` output |
+| is_anomaly | bool | True when `predict()` returns -1 |
+| anomaly_type | string | currently always "trajectory" |
+
+--------------------
+
+## MLflow Model Registry
+
+All three models use the MLflow Model Registry for lifecycle management.
+
+### Stage transitions
+
+`None -> Staging -> Production`
+
+1. Training: model registered as a new version with no stage
+2. Evaluation: If quality gate passes, version promoted to Staging
+3. Manual review (optional): operator inspects the model metrics in MLflow UI
+4. Production promotion: evaluation code promotes the model from Staging -> Production when quality gate passes
+
+### Model Names
+
+| Model | Registry Name | 
+|------|------|
+| Delay Risk | aviation-delay-risk | 
+| Congestion | aviation-congestion | 
+| Anomaly | aviation-anomaly | 
+
+Names are configured in `src/config/settings.yml` udeer mlflow.model_names
+
+### Version Pinning
+
+Set enviroment variables to pin specific versions at inference time.
+
+`
+DELAY_MODEL_VERSION=5
+CONGESTION_MODEL_VERSION=3
+ANOMALY_MODEL_VERSION=2
+`
+
+When set, the inference API always loads that exact version regardless of the Production stage. Leave blank to always load the latest
+production version.
+
+------------------
+
+## HPO (Hyperparameter Optimisation)
+
+All three models use `Optuna` for HPO, configured in `src/ml/auto_hpo.py`
+
+| Parameter | Default | Env override |
+|------|-----|------|
+| Trials per model | 30 | HPO_N_TRIALS |
+| Max training rows | 50,000| HPO_SAMPLE_ROWS |
+| Sampler | TPE (Tree-structured Parzen Estimator) | -|
+| Direction | maximize AUC/minimise RMSE | - |
+
+### Pruning
+
+Optuna's `MedianPruner` stops unpromising trials early(after trial 5), reducing total HPO time. Each trial is a complete train + eval cycle using the same train/test split (fixed random seed for reproducibility).
+
+### MLflow Integration
+
+Each HPO trial is logged as a child run nested under the parent training run in MLflow. Best trial parameters are logged to the parent run.
+
+--------------
+
+## Retraining Schedule
+
+| Trigger | Schedule | 
+|------|------|
+| Monthly Cron | 0 2 1 * * (1st of month, 02:00 UTC)| 
+| Data drift | Evidently detects > 30% features drifted vs. 7-14d reference | 
+| Performance drop | Heuristic proxy metrics exceeds threshold| 
+| Manual | make retrain or Airflow UI trigger | 
+
+On each retrain, all three models are trained independently.
