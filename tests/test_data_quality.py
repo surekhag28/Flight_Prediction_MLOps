@@ -5,30 +5,30 @@ import pytest
 
 
 def test_success_rate_full_pass():
-    from src.data_quality.validate import ValidationbResult
+    from src.data_quality.validate import ValidationResult
 
-    result = ValidationbResult("bronze_suite", True, 10, 10, [])
+    result = ValidationResult("bronze_suite", True, 10, 10, [])
     assert result.success_rate == 1.0
 
 
 def test_success_rate_partial_pass():
-    from src.data_quality.validate import ValidationbResult
+    from src.data_quality.validate import ValidationResult
 
-    result = ValidationbResult("bronze_suite", True, 10, 8, [])
+    result = ValidationResult("bronze_suite", True, 10, 8, [])
     assert result.success_rate == pytest.approx(0.8)
 
 
 def test_success_rate_zero_evaluated():
-    from src.data_quality.validate import ValidationbResult
+    from src.data_quality.validate import ValidationResult
 
-    result = ValidationbResult("bronze_suite", True, 0, 0, [])
+    result = ValidationResult("bronze_suite", True, 0, 0, [])
     assert result.success_rate == 1.0
 
 
 def test_to_dict():
-    from src.data_quality.validate import ValidationbResult
+    from src.data_quality.validate import ValidationResult
 
-    result = ValidationbResult("bronze_suite", True, 10, 8, [])
+    result = ValidationResult("bronze_suite", True, 10, 8, [])
 
     expected = {
         "suite_name": "bronze_suite",
@@ -87,6 +87,7 @@ def test_missing_required_column_fails():
     assert result.passed is False
     types = [exp["expectation_type"] for exp in result.failed_expectations]
     assert "expect_table_columns_to_match_set" in types
+    assert "expect_tbale_columns_to_matc_set" in types
 
 
 def test_all_null_icao24_faills():
